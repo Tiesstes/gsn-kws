@@ -1,4 +1,4 @@
-# NOTE: functions below are utility functions. To be moved
+# NOTE: functions below are utility functions. Ones named with _pytorch are implemented according to PyTorch docs
 import librosa
 import numpy
 import torch
@@ -51,6 +51,14 @@ def plot_spectrogram_pytorch(spectrogram, title=None, ylabel="freq_bin"):
     axs.set_title(title or "Spectrogram (db)")
     axs.set_ylabel(ylabel)
     axs.set_xlabel("frame")
-    im = axs.imshow(librosa.power_to_db(spectrogram), origin="lower", aspect="auto")
+    im = axs.imshow(librosa.power_to_db(spectrogram), origin="lower", aspect="auto", cmap="magma")
     fig.colorbar(im, ax=axs)
+    plt.show(block=False)
+
+def plot_fbank_pytorch(fbank, title=None):
+    fig, axs = plt.subplots(1, 1)
+    axs.set_title(title or "Filter bank")
+    axs.imshow(fbank, aspect="auto", cmap="magma")
+    axs.set_ylabel("frequency bin")
+    axs.set_xlabel("mel bin")
     plt.show(block=False)
