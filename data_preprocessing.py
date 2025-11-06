@@ -30,19 +30,22 @@ test_data = SPEECHCOMMANDS(root=dataset_path, download=False, subset="testing")
 
 
 # TODO: dataset processing with DataLoaders
+batch_size = 16
 
-#train_dataloader = DataLoader(train_data, batch_size=4, shuffle=True)
-#valid_dataloader = DataLoader(train_data, batch_size=4, shuffle=True)
-#test_dataloader = DataLoader(test_data, batch_size=4, shuffle=True)
+#train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
+#valid_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
+#test_dataloader = DataLoader(test_data, batch_size=batch_size, shuffle=True)
 
 
 print(f"The training dataset length is: {train_data.__len__()}")
 i = 3
 # WARNING: The normal train_data[0] does not work at the local machine, hence the direct call for .__getitem__(i)
-waveform, sample_rate, label, *_ = train_data.__getitem__(i)
+waveform, sample_rate, label, speaker_id, utterance_number = train_data.__getitem__(i)
+
+utils.plot_waveform_pytorch(waveform, sample_rate, label)
 
 # NOTE: Play with the parameters to see the difference in Mel Spectrogram
-n_fft = 1024
+n_fft = 512
 win_length = None
 hop_length = 160
 n_mels = 64
@@ -60,7 +63,7 @@ transform_ms = transforms.MelSpectrogram(
     mel_scale="htk",
 )
 
-functional_mf = functionals.melscale_fbanks(int(n_fft // 2 + 1), n_mels=n_mels,
+functional_mf = functionals.melscale_fbanks(n_freqs=int(n_fft // 2 + 1), n_mels=n_mels,
     f_min=0.0,
     f_max=sample_rate / 2.0,
     sample_rate=sample_rate,
@@ -68,4 +71,6 @@ functional_mf = functionals.melscale_fbanks(int(n_fft // 2 + 1), n_mels=n_mels,
 
 melspec = transform_ms(waveform)
 utils.plot_spectrogram_pytorch(melspec[0], "Mel-Spectrogram", "mel_freq")
+
+utils.plot_fbank_pytorch(functional_mf, "Mel Filter Banks")
 
