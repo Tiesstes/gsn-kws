@@ -1,14 +1,18 @@
 import os
+from pickle import GLOBAL
+
+import custom_utils as utils
 
 import numpy
-import soundfile as sf
-import matplotlib.pyplot as plt
+import soundfile # necessary for torch in Windows to handle audio files; torchcodec does not work
 
 
 import torch
 import torchaudio
+import torchaudio.transforms as transforms
+
 from torch.utils.data import DataLoader
-from torchaudio.compliance.kaldi import spectrogram
+
 from torchaudio.datasets import SPEECHCOMMANDS
 
 
@@ -31,40 +35,31 @@ test_data = SPEECHCOMMANDS(root=dataset_path, download=False, subset="testing")
 #test_dataloader = DataLoader(test_data, batch_size=4, shuffle=True)
 
 
-
-# NOTE: functions below are utility functions. To be moved
-
-def plot_spectrogram(waveform_data, sample_rate_data, title="Spectrogram"):
-    waveform_data = waveform_data.numpy()
-    figure, ax = plt.subplots(figsize=(9, 7))
-    ax.specgram(waveform_data[0], Fs=sample_rate_data, cmap="magma")
-    figure.suptitle(title)
-    plt.xlabel("Time [s]")
-    plt.ylabel("Frequency [Hz]")
-    plt.show()
-
-def plot_waveform(waveform_data, sample_rate_data, title="Waveform"):
-
-    waveform_data = waveform_data.numpy()
-    print(f"First dimension of 'waveform_data' is channel, second is the samples (and their values): {waveform_data.shape}")
-    channel, samples = waveform_data.shape
-
-    time = numpy.arange(samples)/sample_rate_data
-
-    figure, ax = plt.subplots(figsize=(9, 7))
-    ax.plot(time, waveform_data[0], linewidth=2)
-    figure.suptitle(title)
-    plt.grid()
-    plt.xlabel("Time [s]")
-    plt.ylabel("Amplitude")
-    plt.show()
-
-
-
 print(f"The training dataset length is: {train_data.__len__()}")
 i = 3
 # The normal train_data[0] does not work at the local machine, hence the direct call for .__getitem__(i)
 waveform, sample_rate, label, *_ = train_data.__getitem__(i)
-plot_spectrogram(waveform, sample_rate, title=f"Sample {i}: {label}")
-plot_waveform(waveform, sample_rate, title=f"Sample {i}: {label}")
+
+# Play with the parameters to see the difference in Mel Spectrogram
+
+n_fft = 1024
+win_length = None
+hop_length = 160
+n_mels = 128
+
+transform = transforms.MelSpectrogram(
+    sample_rate=sample_rate,
+    n_fft=n_fft,
+    win_length=win_length,
+    hop_length=hop_length,
+    center=True,
+    pad_mode="reflect",
+    power=2.0,
+    norm=None,
+    n_mels=n_mels,
+    mel_scale="htk",
+)
+
+melspec = transform(waveform)
+utils.plot_spectrogram_pytorch(melspec[0], "Mel-Spectrogram", "mel_freq")
 
