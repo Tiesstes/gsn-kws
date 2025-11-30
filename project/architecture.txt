@@ -1,0 +1,11 @@
+
+Input: 1×40×W (log-mel)
+conv2d 5x5 - BN - ReLU - 16 (2,1) stride
+BC-ResBlock 2 8 1 1
+BC-ResBlock 2 12 (2,1) (1,2)
+BC-ResBlock 4 16 (2,1) (1,4)
+BC-ResBlock 4 20 1 (1,8)
+DWconv 5x5 - 20 1 1
+conv2d 1x1 - BN - ReLU - 32 1 1
+avgpool - 32×1×1
+conv2d 1x1 - 12

@@ -30,7 +30,7 @@ test_data = SPEECHCOMMANDS(root=dataset_path, download=False, subset="testing")
 
 
 # TODO: dataset processing with DataLoaders
-batch_size = 16
+batch_size = 32
 
 #train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
 #valid_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
@@ -45,10 +45,12 @@ waveform, sample_rate, label, speaker_id, utterance_number = train_data.__getite
 utils.plot_waveform_pytorch(waveform, sample_rate, label)
 
 # NOTE: Play with the parameters to see the difference in Mel Spectrogram
-n_fft = 512
-win_length = None
+n_fft = 1024
+win_length = 320
 hop_length = 160
-n_mels = 64
+n_mels = 40
+
+
 
 transform_ms = transforms.MelSpectrogram(
     sample_rate=sample_rate,
