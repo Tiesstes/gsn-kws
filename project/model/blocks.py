@@ -91,7 +91,7 @@ class SSN(nn.Module):
 
         elif self.affine_transformation == "sub_band":
             # jak batch normalisation, każde podpasmo ma swoje gamma i beta
-            x = x.view(batch, channels * s, frequency_range, time)
+            x = x.view(batch, channels * s, sub_band_width, time)
             mean = x.mean([0, 2, 3]).view(1, channels * s, 1, 1)
             variance = x.var([0, 2, 3]).view(1, channels * s, 1, 1)
             # ze wzorku na normalizację ogółem
