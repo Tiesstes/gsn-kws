@@ -27,11 +27,12 @@ test_base  = SPEECHCOMMANDS(root=dataset_dir, subset="testing")
 all_labels = []
 all_speakers = []
 
+# bo chcemy zrobić mapping etykiet i id mówców
 for _, _, label, speaker, _ in train_base:
     all_labels.append(label)
     all_speakers.append(speaker)
 
-# usuwamy duplikaty wartości i sortujemy
+# usuwamy duplikaty wartości (set) i sortujemy
 all_labels = sorted(set(all_labels))
 all_speakers = sorted(set(all_speakers))
 
@@ -51,10 +52,10 @@ test_dataset  = SpeechCommandsKWS(test_base,  label_mapping, speaker_mapping)
 
 train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=4)
 
-batch = next(iter(train_loader)) # wzięcie pierwszego batcha z dataloadera
+batch = next(iter(train_loader)) # wzięcie pierwszego batcha z dataloadera (a dataset zwraca klucze i ich wartości)
 x = batch["log_mel_spectrogram"]   # [Batch, 1, 40, ilość ramek czasowych (1s: 30ms okno i 10ms przesunięcie, czyli 0-30ms potem 10-40ms...)]
-y = batch["label"]                 # [Batch]
-s = batch["speaker_id"]            # [Batch]
+y = batch["label"]                 # [Batch], bo tyle etykiet w batchu
+s_id = batch["speaker_id"]            # [Batch], bo tyle mówców w batchu
 
-print(x.shape, y.shape, s.shape)
+print(x.shape, y.shape, s_id.shape)
 
