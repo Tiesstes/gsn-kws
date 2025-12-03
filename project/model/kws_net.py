@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 
+# TODO: model building and fusion
 
 # szkielet sieci
 class KWSNet(nn.Module):

@@ -1,2 +1,2 @@
-# TODO: Model for dataset training
+# TODO: User embedding
 
