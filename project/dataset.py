@@ -10,12 +10,12 @@ class SpeechCommandsKWS(Dataset):
 
     def __init__(self, dataset, label_mapping, speaker_mapping, duration=1.0, sample_rate=16000, number_of_mel_bands=40):
         """
-        Klasa dataset obsługująca GSC v.2 dla BCResNet
+        Klasa dataset obsługująca GSC v.2 do projektu
 
         :param dataset: dataset na bazie którego zostanie zrobiony wrapper
         :param label_mapping: mapowanie etykiet na liczbę
         :param speaker_mapping: mapowanie id mówcy na liczbę
-        :param duration: pożądana długość dla jednego przykładu
+        :param duration: pożądana długość dla jednego przykładu (bo potem końcowo: sampling rate * czas trwania sygnału)
         :param sample_rate: częstotliwość próbkowania sygnału
 
         :return: None
@@ -44,7 +44,8 @@ class SpeechCommandsKWS(Dataset):
 
         # cięcie jeśli != duration. clone() kopiuje dane oryginalnego tensor'a
         waveform = waveform[:, :self.target_length].clone()
-        # jak nagranie krótsze to padding
+
+        # jak nagranie krótsze to padding zerami
         if waveform.shape[1] < self.target_length:
             pad = self.target_length - waveform.shape[1] # różnica między chcianą długością a realną danych
             waveform = F.pad(waveform, (0, pad))
@@ -55,8 +56,8 @@ class SpeechCommandsKWS(Dataset):
 
         return {
             "log_mel_spectrogram": log_mel_spectrogram,
-            "speaker_id": tensor(self.speaker_mapping[speaker_id], dtype=torch.long),
-            "label": tensor(self.label_mapping[label], dtype=torch.long),
+            "speaker_id": tensor(self.speaker_mapping[speaker_id], dtype=torch.long), # casting (rzutowanie) do tensora
+            "label": tensor(self.label_mapping[label], dtype=torch.long), # casting do tensora
             "mel_spectrogram": mel_spectrogram
         }
 
