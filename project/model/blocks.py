@@ -46,8 +46,8 @@ class SSN(nn.Module):
             # tutaj jest jak batch normalisation, ale na Ch * S kanałach -> jak w paper
             # trochę jak implementacja pojedynczego perceptronu tbh tylko zamiast 'w' jest γ, a zamiast 'b' jest β
             # to jest to samo prawie co wyżej, ale będę mieć więcej w tensorze kanałów o skalowania przez liczbę podpasm
-            self.gamma = nn.Parameter(torch.ones(1, num_of_channels * self.num_of_channels, 1, 1))  # nie ma na początku skalowania
-            self.beta = nn.Parameter(torch.zeros(1, num_of_channels * self.num_of_channels, 1, 1))  # nie chcemy na początku przesunięć
+            self.gamma = nn.Parameter(torch.ones(1, num_of_channels * self.num_of_subspec_bands, 1, 1))  # nie ma na początku skalowania
+            self.beta = nn.Parameter(torch.zeros(1, num_of_channels * self.num_of_subspec_bands, 1, 1))  # nie chcemy na początku przesunięć
 
 
         else:
@@ -288,8 +288,3 @@ class BCResBlock(nn.Module):
             y = F.relu(identity_y_f2 + broadcasted_y_f1)
 
             return y
-
-
-
-
-
