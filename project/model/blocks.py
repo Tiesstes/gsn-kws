@@ -110,17 +110,18 @@ class SSN(nn.Module):
 
 
 
-class ConvBNReLu(nn.Module):
+class ConvBNReLU(nn.Module):
     """
-    konwolucja z batch normalisation i aktywacją ReLU - w sieci jest pierwsza i przedostatnia w architekturze:
+    Konwolucja z batch normalisation i aktywacją ReLU - w sieci jest pierwsza i przedostatnia
+     w architekturze BC-ResNet-1:
 
-    input1: channel×frequency×time, total time steps W -> [1, 40, W]
-    stride = {(2,1), 1}
-    dilation = {1, 1}
-    channels_out = {16, 32}
+    wystąpią:
+    - input1: channel×frequency×time, total time steps W -> [1, 40, W]
+    - stride = {(2,1), 1}
+    - dilation = {1, 1}
+    - channels_out = {16, 32}
 
-    ilość wyjść dla wymiaru = ⌊(input + 2*padding − kernel)/stride⌋ + 1, gdzie padding = k//2
-
+    Ilość wyjść dla wymiaru o = ⌊(input + 2*padding − kernel)/stride⌋ + 1, gdzie padding = k//2
     """
     def __init__(self, in_channels: int, out_channels: int, kernel_size, stride=1, padding=0):
         super().__init__()
@@ -133,11 +134,16 @@ class ConvBNReLu(nn.Module):
         :param padding: ile dołożyć rzędów/kolumn etc. zer
         
         """
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
 
         self.block = nn.Sequential(
-            nn.Conv2d(in_channels=in_channels,
-                      out_channels=out_channels,
-                      kernel_size=kernel_size, stride=stride, padding=padding, dilation=1,
+            nn.Conv2d(in_channels=self.in_channels,
+                      out_channels=self.out_channels,
+                      kernel_size=self.kernel_size, stride=self.stride, padding=self.padding, dilation=1,
                       bias=False), # bias jest w batch normalisation - taka konwencja
 
             nn.BatchNorm2d(out_channels),
@@ -151,13 +157,20 @@ class ConvBNReLu(nn.Module):
             return y
 
 
-# TODO: blok Residual
+# TODO: check blok Residual
 
 # y = x + f2(x) + BC(f1(avgpool(f2(x))))
 class BCResBlock(nn.Module):
 
-    def __init__(self, in_channels: int, out_channels: int, ssn_subbands: int, dropout_rate: float, kernel_size, stride=1, padding=0,
-                 dilation=1, bias=False, is_transition = False):
+    """
+    Podstawowy blok dla sieci ResNet
+    Ma z góry ustalony rozmiar kerneli dla realizacji BC-ResNet-1
+
+    Ważne jest by podać informację o tym czy jest to blok transition
+    """
+
+    def __init__(self, in_channels: int, out_channels: int, ssn_subbands: int, dropout_rate: float,
+                 stride=(1,1), dilation=(1,1), is_transition = False):
         super().__init__()
 
         """
@@ -181,9 +194,7 @@ class BCResBlock(nn.Module):
         self.dropout_rate = dropout_rate
 
         self.stride = stride
-        self.padding = padding
         self.dilation = dilation
-        self.bias = bias
 
         f1 = []
         f2 = []
@@ -192,7 +203,8 @@ class BCResBlock(nn.Module):
         # wejście [B, Ch, F, W] batch, kanał, częstotliwość, czas!
         if self.is_transition == True and self.in_channels != self.out_channels:
 
-            conv_1x1_f2 = nn.Conv2d(in_channels=self.in_channels, out_channels=self.out_channels, kernel_size=(1,1), bias=False)
+            conv_1x1_f2 = nn.Conv2d(in_channels=self.in_channels, out_channels=self.out_channels,
+                                    kernel_size=(1,1), bias=False)
             bn_f2 = nn.BatchNorm2d(self.out_channels)
             relu_f2 = nn.ReLU(inplace=True)
 
@@ -220,8 +232,9 @@ class BCResBlock(nn.Module):
 
         # "(...) The 2D feature part, f2 consists of a 3x1 frequency-depthwise convolution
         # and SubSpectral Normalization (SSN)"
-        fd_conv = nn.Conv2d(in_channels=depthwise_channels, out_channels=depthwise_channels, kernel_size=(3,1), stride=(1, 1),
-                            padding=(1, 0), groups = depthwise_channels , bias=False)
+        # "Therefore we used stride 's' in the frequency direction ...
+        fd_conv = nn.Conv2d(in_channels=depthwise_channels, out_channels=depthwise_channels, kernel_size=(3,1),
+                            stride=self.stride,  padding=(1, 0), groups = depthwise_channels , bias=False)
 
         # jeśli ssn_subbands = 1 to i tak to będzie affine = "all"
         # TODO: można zmienić implementację SSN bo w sumie nie trzeba mieć affine "all"
@@ -237,8 +250,11 @@ class BCResBlock(nn.Module):
         # "(...) The f1 is a composite of a 1x3 temporal depthwise convolution followed by BN,
         # swish activation [15], 1x1 pointwise convolution, and channel-wise dropout of dropout rate p."
 
+        # "(...) The temporal convolutions in all BC-ResBlocks use dilation of d"
+        # ... and dilation 'd' in the temporal dimension."
         td_conv = nn.Conv2d(in_channels=depthwise_channels, out_channels=depthwise_channels, kernel_size=(1, 3), stride=(1, 1),
-                            padding=(0, 1), groups=depthwise_channels, bias=False)
+                            padding=(0, 1), dilation=self.dilation, groups=depthwise_channels, bias=False)
+
         bn_f1 = nn.BatchNorm2d(depthwise_channels)
         # Swish = SiLU: https://docs.pytorch.org/docs/2.8/generated/torch.nn.SiLU.html#torch.nn.SiLU
         swish_f1 = nn.SiLU(inplace=True)
