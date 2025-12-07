@@ -1,7 +1,10 @@
 import torch
 from torch import nn
 
-# TODO: model building and fusion
+from project.model.bcresnet1 import BCResNet1
+
+
+# TODO: model building, embedding and fusion
 
 # szkielet sieci
 class KWSNet(nn.Module):
@@ -9,7 +12,9 @@ class KWSNet(nn.Module):
     def __init__(self, num_of_classes, num_of_speakers, speaker_emb_dim=16):
         super().__init__()
         self.speaker_embedding = nn.Embedding(num_of_speakers, speaker_emb_dim) # czy może kalsę do tego? to potem
-        self.backbone = BCResNet1(in_channels=1) # zdefiniować backbone
+        self.backbone = BCResNet1(in_channels=1)
+
+
         self.classifier = nn.Linear(self.backbone.out_dim + speaker_emb_dim,
                                     num_of_classes)
 
@@ -19,3 +24,4 @@ class KWSNet(nn.Module):
         fused = torch.cat([feat, speaker_vector], dim=1)
         logits = self.classifier(fused) # logit, to funkcja mapująca prawdopodobieństwo z wartości -inf do +inf
         return logits
+
