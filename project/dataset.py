@@ -30,7 +30,7 @@ class SpeechCommandsKWS(Dataset):
         # żeby ustandaryzować czas trwania
         self.target_length = int(duration * sample_rate)
         # transformacja, której będą poddane dane do wsadu dla sieci -> win_length = 30ms * 16kHz; hop_length = 10ms * 16kHz
-        self.to_melspec = T.MelSpectrogram(sample_rate, n_fft=512, win_length=320,
+        self.to_melspec = T.MelSpectrogram(sample_rate, n_fft=512, win_length=480,
                                                      hop_length=160, n_mels=number_of_mel_bands)
         # transformacja z liniowej na moc
         self.to_db = T.AmplitudeToDB(stype='power')
@@ -42,12 +42,12 @@ class SpeechCommandsKWS(Dataset):
 
         waveform, sample_rate, label, speaker_id, _ = self.base_data[index]
 
-        # cięcie jeśli != duration. clone() kopiuje dane oryginalnego tensor'a
-        waveform = waveform[:, :self.target_length].clone()
+        # cięcie jeśli != duration. clone() kopiuje dane oryginalnego tensor'a, a zostawia ten z datasetu w spokoju
+        waveform = waveform[:, :self.target_length].clone() # kształt [kanały, czas trwania] -> kanały wszystkie, ale czas nie
 
         # jak nagranie krótsze to padding zerami
         if waveform.shape[1] < self.target_length:
-            pad = self.target_length - waveform.shape[1] # różnica między chcianą długością a realną danych
+            pad = self.target_length - waveform.shape[1] # różnica między chcianą długością a realną długością danych
             waveform = F.pad(waveform, (0, pad))
 
         # mel spektrogram i jeszcze do skali log

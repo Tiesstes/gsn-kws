@@ -7,6 +7,8 @@ from torchaudio.datasets import SPEECHCOMMANDS
 
 from dataset import SpeechCommandsKWS
 
+from model.blocks import BCResBlock
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(device)
 print(torch.__version__)
@@ -20,8 +22,8 @@ BATCH_SIZE = 32
 print(dataset_dir)
 # podzbiory:
 train_base = SPEECHCOMMANDS(root=dataset_dir, subset="training")
-val_base   = SPEECHCOMMANDS(root=dataset_dir, subset="validation")
-test_base  = SPEECHCOMMANDS(root=dataset_dir, subset="testing")
+#val_base   = SPEECHCOMMANDS(root=dataset_dir, subset="validation")
+#test_base  = SPEECHCOMMANDS(root=dataset_dir, subset="testing")
 
 # mapowanie etykiet i mówcy
 all_labels = []
@@ -47,10 +49,10 @@ for i, s_id in enumerate(all_speakers):
 
 # datasety prawdziwe:
 train_dataset = SpeechCommandsKWS(train_base, label_mapping, speaker_mapping)
-val_dataset  = SpeechCommandsKWS(val_base,   label_mapping, speaker_mapping)
-test_dataset  = SpeechCommandsKWS(test_base,  label_mapping, speaker_mapping)
+#val_dataset  = SpeechCommandsKWS(val_base,   label_mapping, speaker_mapping)
+#test_dataset  = SpeechCommandsKWS(test_base,  label_mapping, speaker_mapping)
 
-train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=4)
+train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
 
 batch = next(iter(train_loader)) # wzięcie pierwszego batcha z dataloadera (a dataset zwraca klucze i ich wartości)
 x = batch["log_mel_spectrogram"]   # [Batch, 1, 40, ilość ramek czasowych (1s: 30ms okno i 10ms przesunięcie, czyli 0-30ms potem 10-40ms...)]
@@ -59,3 +61,16 @@ s_id = batch["speaker_id"]            # [Batch], bo tyle mówców w batchu
 
 print(x.shape, y.shape, s_id.shape)
 
+B, C_in, F, T = x.shape
+print("wejście do bloku:", x.shape)
+
+block = BCResBlock(
+    in_channels=C_in,
+    out_channels=C_in,      # na początek blok nieprzejściowy
+    ssn_subbands=4,
+    dropout_rate=0.1,
+    is_transition=False,
+)
+
+out = block(x)
+print("wyjście z bloku:", out.shape)
