@@ -1,7 +1,7 @@
 from blocks import *
 
 
-# TODO: forward function
+# TODO: clean up forward function
 
 class BCResNet1(nn.Module):
 

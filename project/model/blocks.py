@@ -220,7 +220,7 @@ class BCResBlock(nn.Module):
             depthwise_channels = self.in_channels
 
         else:
-            raise ValueError("Określono jako nieodpowiedni rodzaj bloku ResNet"
+            raise ValueError("Określono jako nieodpowiedni rodzaj bloku ResNet "
                              f"kanały wejścia: {self.in_channels}, kanały wyjścia: {self.out_channels}, "
                              f"określono transition jako: {self.is_transition}")
 
