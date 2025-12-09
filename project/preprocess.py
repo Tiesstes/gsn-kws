@@ -8,6 +8,7 @@ from torchaudio.datasets import SPEECHCOMMANDS
 from dataset import SpeechCommandsKWS
 
 from model.blocks import BCResBlock
+from project.model.blocks import ConvBNReLU
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(device)
@@ -64,13 +65,37 @@ print(x.shape, y.shape, s_id.shape)
 B, C_in, F, T = x.shape
 print("wejście do bloku:", x.shape)
 
-block = BCResBlock(
+# mały teścik bloków
+
+#blok conv
+convBNReLU = ConvBNReLU(
     in_channels=C_in,
-    out_channels=C_in,      # na początek blok nieprzejściowy
+    out_channels=C_in,
+    kernel_size=3,
+    stride=1,
+    padding=1,
+)
+out = convBNReLU(x) # to samo co convBNReLU.forward(x)
+print("wyjście z bloku ConvBNReLU:", out.shape)
+
+# blok normal
+normal_block = BCResBlock(
+    in_channels=C_in,
+    out_channels=C_in,
     ssn_subbands=4,
     dropout_rate=0.1,
     is_transition=False,
 )
+# blok transition
+transition_block = BCResBlock(
+    in_channels=C_in,
+    out_channels=C_in + 10,
+    ssn_subbands=4,
+    dropout_rate=0.1,
+    is_transition=True,
+)
 
-out = block(x)
-print("wyjście z bloku:", out.shape)
+out = normal_block(x)
+print("wyjście z bloku normal:", out.shape)
+out = transition_block(out)
+print("wyjście z bloku transition:", out.shape)
