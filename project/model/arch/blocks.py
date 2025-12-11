@@ -14,21 +14,21 @@ class SSN(nn.Module):
 
     def __init__(self, num_of_channels: int, num_of_subspec_bands: int, affine_transformation: AFFINE_TRANSFORMATION):
 
+        """
+                    SubSpectral Normalisation - batch notmalisation, ale oddzielnie dla każdego podpasma częstotliwości.
+                    Clue programu to podzielić częstotliwości jednej mapy cech (liczba channels) na podpasma i dla każdego liczyć
+                    z osobna normalizację, ale to wszystko jest wciąż w ramach JEDNEJ mapy cech
+
+                    WAŻNE: SSN(num_of_subspec_bands=1, AFFINE_TRANSFORMATION=All) tożsame z BATCHNORM
+                           SSN(num_of_subspec_bands=1, AFFINE_TRANSFORMATION=Sub) tożsame z BATCHNORM
+
+                    :param num_of_channels: ile jest kanałów wejściowych
+                    :param num_of_subspec_bands: na ile podpasm ma być podzielone wejście
+                    :param affine_transformation: jaki typ SSN: {"all", "sub_band"}
+
+                """
+
         super().__init__()
-
-        """
-            SubSpectral Normalisation - batch notmalisation, ale oddzielnie dla każdego podpasma częstotliwości.
-            Clue programu to podzielić częstotliwości jednej mapy cech (liczba channels) na podpasma i dla każdego liczyć
-            z osobna normalizację, ale to wszystko jest wciąż w ramach JEDNEJ mapy cech
-
-            WAŻNE: SSN(num_of_subspec_bands=1, AFFINE_TRANSFORMATION=All) tożsame z BATCHNORM
-                   SSN(num_of_subspec_bands=1, AFFINE_TRANSFORMATION=Sub) tożsame z BATCHNORM
-
-            :param num_of_channels: ile jest kanałów wejściowych
-            :param num_of_subspec_bands: na ile podpasm ma być podzielone wejście
-            :param affine_transformation: jaki typ SSN: {"all", "sub_band"}
-
-        """
 
         self.num_of_channels = num_of_channels
         self.num_of_subspec_bands = num_of_subspec_bands
@@ -124,16 +124,17 @@ class ConvBNReLU(nn.Module):
     Ilość wyjść dla wymiaru o = ⌊(input + 2*padding − kernel)/stride⌋ + 1, gdzie padding = k//2
     """
     def __init__(self, in_channels: int, out_channels: int, kernel_size, stride=1, padding=0):
-        super().__init__()
-
         """
         :param channels_in: kanały wejściowe
         :param channels_out: kanały wyjściowe
         :param kernel_size: rozmiar filtra
         :param stride: co ile przesuwa się filtr
         :param padding: ile dołożyć rzędów/kolumn etc. zer
-        
+
         """
+
+        super().__init__()
+
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.kernel_size = kernel_size
@@ -165,28 +166,25 @@ class BCResBlock(nn.Module):
     """
     Podstawowy blok dla sieci ResNet
     Ma z góry ustalony rozmiar kerneli dla realizacji BC-ResNet-1
-
-    Ważne jest by podać informację o tym czy jest to blok transition
     """
 
     def __init__(self, in_channels: int, out_channels: int, ssn_subbands: int, dropout_rate: float,
                  stride=(1,1), dilation=(1,1), is_transition = False):
-        super().__init__()
 
         """
-        Podstawowy blok dla sieci ResNet
-        
-        :param in_channels:
-        :param out_channels:
-        :param kernel_size:
-        :param stride:
-        :param padding:
-        :param dilation:
-        :param groups:
-        :param bias:
-        :param is_transition:
-        
-        """
+                Podstawowy blok dla sieci ResNet
+
+                :param in_channels: liczba kanałów wejścia
+                :param out_channels: liczba kanałów wyjścia
+                :param stride: krok w podanych wymiarach
+                :param padding: dopełnianie zerami w podanych wymiarach
+                :param dilation: dylatacja -> pominięcie przez filtr pewnej ilości wierszy i kolumn
+                :param is_transition: czy jest to blok zmieniający ilość kanałów?
+
+                """
+
+        super().__init__()
+
         # na razie te selfy zostawiam, może się przydadzą
         self.is_transition = is_transition
         self.in_channels = in_channels
@@ -217,7 +215,7 @@ class BCResBlock(nn.Module):
 
         elif self.is_transition == False and self.in_channels == self.out_channels:
             # jeśli wyjście to samo co wejście, to jest to ilość grup do depthwise (bez różnicy czy in czy out channels)
-            depthwise_channels = self.in_channels
+            depthwise_channels = self.in_channels # inaczej grupy
 
         else:
             raise ValueError("Określono jako nieodpowiedni rodzaj bloku ResNet "
@@ -234,7 +232,7 @@ class BCResBlock(nn.Module):
         # and SubSpectral Normalization (SSN)"
         # "Therefore we used stride 's' in the frequency direction ...
         fd_conv = nn.Conv2d(in_channels=depthwise_channels, out_channels=depthwise_channels, kernel_size=(3,1),
-                            stride=self.stride,  padding=(1, 0), groups = depthwise_channels , bias=False)
+                            stride=self.stride,  padding=(1, 0), groups=depthwise_channels , bias=False)
 
         # jeśli ssn_subbands = 1 to i tak to będzie affine = "all"
         # TODO: można zmienić implementację SSN bo w sumie nie trzeba mieć affine "all"
