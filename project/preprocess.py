@@ -7,8 +7,8 @@ from torchaudio.datasets import SPEECHCOMMANDS
 
 from dataset import SpeechCommandsKWS
 
-from model.blocks import BCResBlock
-from project.model.blocks import ConvBNReLU
+from project.model.arch.blocks import BCResBlock
+from project.model.arch.blocks import ConvBNReLU
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(device)
