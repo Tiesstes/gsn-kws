@@ -17,37 +17,23 @@ print(torchaudio.__version__)
 
 
 # konfiguracja
-dataset_dir = os.path.abspath(os.getcwd())
+DATASET_DIR = os.path.abspath(os.getcwd())
 BATCH_SIZE = 32
 
-print(dataset_dir)
+print(DATASET_DIR)
 # podzbiory:
-train_base = SPEECHCOMMANDS(root=dataset_dir, subset="training")
+train_base = SPEECHCOMMANDS(root=DATASET_DIR, subset="training")
 #val_base   = SPEECHCOMMANDS(root=dataset_dir, subset="validation")
 #test_base  = SPEECHCOMMANDS(root=dataset_dir, subset="testing")
 
-# mapowanie etykiet i mówcy
-all_labels = []
-all_speakers = []
+print(train_base.__len__())
 
-# bo chcemy zrobić mapping etykiet i id mówców
-for _, _, label, speaker, _ in train_base:
-    all_labels.append(label)
-    all_speakers.append(speaker)
+training = SpeechCommandsKWS(train_base)
 
-# usuwamy duplikaty wartości (set) i sortujemy
-all_labels = sorted(set(all_labels))
-all_speakers = sorted(set(all_speakers))
+print(training.__len__())
+print(training.speaker_counter)
 
-# robimy mapy: string -> int
-label_mapping = {}
-for i, lbl in enumerate(all_labels):
-    label_mapping[lbl] = i
-
-speaker_mapping = {}
-for i, s_id in enumerate(all_speakers):
-    speaker_mapping[s_id] = i
-
+"""
 # datasety prawdziwe:
 train_dataset = SpeechCommandsKWS(train_base, label_mapping, speaker_mapping)
 #val_dataset  = SpeechCommandsKWS(val_base,   label_mapping, speaker_mapping)
@@ -62,9 +48,12 @@ s_id = batch["speaker_id"]            # [Batch], bo tyle mówców w batchu
 
 print(x.shape, y.shape, s_id.shape)
 
-B, C_in, F, T = x.shape
-print("wejście do bloku:", x.shape)
 
+
+B, C_in, F, T = x.shape
+
+print("wejście do bloku:", x.shape)"""
+"""
 # mały teścik bloków
 
 #blok conv
@@ -98,4 +87,4 @@ transition_block = BCResBlock(
 out = normal_block(x)
 print("wyjście z bloku normal:", out.shape)
 out = transition_block(out)
-print("wyjście z bloku transition:", out.shape)
+print("wyjście z bloku transition:", out.shape)"""
