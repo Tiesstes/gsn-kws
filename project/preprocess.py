@@ -32,6 +32,7 @@ training = SpeechCommandsKWS(train_base)
 
 print(training.__len__())
 print(training.speaker_counter)
+print(training.label_mapping)
 
 """
 # datasety prawdziwe:

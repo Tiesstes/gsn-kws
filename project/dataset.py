@@ -82,6 +82,15 @@ class SpeechCommandsKWS(Dataset):
 
         waveform, sample_rate, label, speaker_id, _ = self.base_data[index]
 
+        label = label.lower()
+
+        if label in TARGET_LABELS:
+            mapped_label = label
+        elif label in AUXILIARY:
+            mapped_label = "unknown"
+        else:
+            mapped_label = "silence"
+
         # cięcie jeśli != duration. clone() kopiuje dane oryginalnego tensor'a, a zostawia ten z datasetu w spokoju
         waveform = waveform[:, :self.target_sample_length].clone() # kształt [kanały, czas trwania] -> kanały wszystkie, ale czas nie
 
@@ -98,7 +107,7 @@ class SpeechCommandsKWS(Dataset):
         return {
             "log_mel_spectrogram": log_mel_spectrogram,
             "speaker_id": tensor(self.speaker_mapping[speaker_id], dtype=torch.long), # casting (rzutowanie) do tensora
-            "label": tensor(self.label_mapping[label], dtype=torch.long), # casting do tensora
+            "label": tensor(self.label_mapping[mapped_label], dtype=torch.long), # casting do tensora
             "mel_spectrogram": mel_spectrogram
         }
 
