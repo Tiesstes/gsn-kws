@@ -1,9 +1,10 @@
 from collections import Counter
+from pathlib import Path
 
 import torch
-from torch import tensor, dtype
+import torchaudio
+from torch import tensor
 from torch.utils.data import Dataset
-from torchaudio.datasets import SPEECHCOMMANDS
 from torchaudio import transforms as T
 from torch.nn import functional as F
 
@@ -19,7 +20,7 @@ AUXILIARY = [ "bed", "bird", "cat", "dog", "happy", "house", "marvin", "sheila",
 
 class SpeechCommandsKWS(Dataset):
 
-    def __init__(self, dataset, duration=1.0, sample_rate=16000, number_of_mel_bands=40):
+    def __init__(self, dataset, noise_dir, duration=1.0, sample_rate=16000, number_of_mel_bands=40):
         """
         Klasa dataset obsługująca GSC v.2 do projektu
 
@@ -31,8 +32,16 @@ class SpeechCommandsKWS(Dataset):
 
         :return: None
         """
+        # bo po tym głupim _backround_noise_ SPEECHCOMMANDS nie iteruje oczywiście :)
+        self.path = Path(noise_dir)
 
-        self.base_data = dataset
+        noise_list = []
+        for audio_file in self.path.glob("*.wav"):
+            waveform, sample_rate = torchaudio.load(audio_file)
+            noise_list.append((waveform, sample_rate, "noise", "none", audio_file)) # dodaje tuplę w formie, którą lubi ten dataset
+
+        # agregujemy sobie te dane -> (waveform, sample rate, etykieta, speaker, path)
+        self.base_data = list(dataset) + noise_list
 
         self.label_counter = Counter()
         self.speaker_counter = Counter()
@@ -42,21 +51,21 @@ class SpeechCommandsKWS(Dataset):
             label = label.lower()  # upewnij się, że są z małej litery
 
             if label in TARGET_LABELS:
-                mapped = label
+                mapped_label = label
 
             elif label in AUXILIARY:
-                mapped = "unknown"
+                mapped_label = "unknown"
             else:
-                mapped = "silence"
+                mapped_label = "silence" # dorobić sygnały do silence
 
-            self.label_counter[mapped] += 1
+            self.label_counter[mapped_label] += 1
             self.speaker_counter[speaker] += 1
 
-        # smarter podejście bez list i sortowania i setów
-        all_labels = sorted(self.label_counter.keys())
+        # smarter podejście bez list i setów
+        all_labels = sorted(self.label_counter.keys()) # tutaj już lecą zmapowane wartości - keys
         all_speakers = sorted(self.speaker_counter.keys())
 
-        # robimy mapy: string -> int
+        # robimy mapy: string -> int; dla sieci
         self.label_mapping = {}
         for i, lbl in enumerate(all_labels):
             self.label_mapping[lbl] = i
@@ -65,7 +74,6 @@ class SpeechCommandsKWS(Dataset):
         for i, s_id in enumerate(all_speakers):
             self.speaker_mapping[s_id] = i
 
-        #return label_mapping, speaker_mapping, label_counter
 
         # żeby ustandaryzować czas trwania
         self.target_sample_length = int(duration * sample_rate)
@@ -82,22 +90,31 @@ class SpeechCommandsKWS(Dataset):
 
         waveform, sample_rate, label, speaker_id, _ = self.base_data[index]
 
-        label = label.lower()
+        label = label.lower() # upewnij się, że małe litery
 
+        # zamień na etykietę o znormalizowanej nazwie
         if label in TARGET_LABELS:
             mapped_label = label
         elif label in AUXILIARY:
             mapped_label = "unknown"
-        else:
+        else: # ta klasa "noise" zamieni się na "silence" jak w artykułach
             mapped_label = "silence"
 
-        # cięcie jeśli != duration. clone() kopiuje dane oryginalnego tensor'a, a zostawia ten z datasetu w spokoju
-        waveform = waveform[:, :self.target_sample_length].clone() # kształt [kanały, czas trwania] -> kanały wszystkie, ale czas nie
+        # .clone() kopiuje dane oryginalnego tensor'a, a zostawia ten z datasetu w spokoju
+        waveform = waveform.clone() # bierzemy teraz całe nagranie i zaraz będziemy się nim bawić w if'ach
+        waveform_length = waveform.shape[1]
 
         # jak nagranie krótsze to padding zerami
-        if waveform.shape[1] < self.target_sample_length:
-            pad = self.target_sample_length - waveform.shape[1] # różnica między chcianą długością a realną długością danych
-            waveform = F.pad(waveform, (0, pad))
+        if waveform_length < self.target_sample_length:
+            to_pad = self.target_sample_length - waveform.shape[1] # różnica między chcianą długością a realną długością danych
+            waveform = F.pad(waveform, (0, to_pad))
+
+        # każde wywołanie __getitem__ to i tak inny kawałek nagrania z noise - automatyczny shuffle
+        elif waveform_length > self.target_sample_length:
+
+            # losowanie jednego elementu torchem i zamiana na int
+            start = torch.randint(0, waveform_length - self.target_sample_length + 1,(1,)).item()  # ten +1 to żeby indeks był maks
+            waveform = waveform[:, start:start + self.target_sample_length]
 
         # mel spektrogram i jeszcze do skali log
         mel_spectrogram = self.to_melspec(waveform)
@@ -106,9 +123,7 @@ class SpeechCommandsKWS(Dataset):
 
         return {
             "log_mel_spectrogram": log_mel_spectrogram,
-            "speaker_id": tensor(self.speaker_mapping[speaker_id], dtype=torch.long), # casting (rzutowanie) do tensora
-            "label": tensor(self.label_mapping[mapped_label], dtype=torch.long), # casting do tensora
+            "speaker_id": tensor(self.speaker_mapping[speaker_id], dtype=torch.long), # casting (rzutowanie) na tensor
+            "label": tensor(self.label_mapping[mapped_label], dtype=torch.long), # casting na tensor
             "mel_spectrogram": mel_spectrogram
         }
-
-
