@@ -15,7 +15,7 @@ class BCResNet1(nn.Module):
         Atrybuty:
         output_channels: int
             tutaj dla tensora [32 x 1 x W]
-        Na koniec jest avg pooling
+        Na koniec jest avg pooling (1, 1)
 
         """
         super().__init__()
@@ -93,7 +93,7 @@ class BCResNet1(nn.Module):
         y = self.bcresnet_stage4(y)
         y = self.tail(y)
 
-        # nie pozbywamy się wymiarów, bo jeszcze speaker embeddings ;)
-        # y = y.squeeze(-1).squeeze(-1) # usunięcie wymiarów, na indeksie określonym jako (-1), czyli ostatni
+        # a jednak możemy się pozbyć już tych wymiarów - robię na razie dodawanie nic nie kombinuję z fusion point
+        y = y.squeeze(-1).squeeze(-1) # usunięcie wymiarów, na indeksie określonym jako (-1), czyli ostatni
 
         return y
