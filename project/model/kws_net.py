@@ -36,7 +36,7 @@ class KWSNet(nn.Module):
 
         fused = backbone_features + speaker_vector # można też z tym expand_as
 
-        logits = self.classifier(fused) # logit, to funkcja mapująca prawdopodobieństwo
+        logits = self.classifier(fused) # logit, to funkcja mapująca prawdopodobieństwo [z 32 map cech robimy 12 klas]
                                         # z wartości -inf do +inf i ona prawdę nam powie
         return logits
 
