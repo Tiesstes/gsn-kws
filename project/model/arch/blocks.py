@@ -2,69 +2,90 @@ from typing import Literal
 
 import torch
 from torch import nn
-
 from torch.nn import functional as F
 
 # na wejście wchodzi tensor [B, 1, 40, W] batch, kanał, ilość pasm częstotliwości i czas trwania
 
-AFFINE_TRANSFORMATION = Literal["all", "sub_band"]
+#AFFINE_TRANSFORMATION = Literal["all", "sub_band"]
 
-# artykuł naukowy o SSN: https://arxiv.org/pdf/2103.13620
+# artykuł naukowy o SSN: [https://arxiv.org/pdf/2103.13620](https://arxiv.org/pdf/2103.13620)
 class SSN(nn.Module):
 
-    def __init__(self, num_of_channels: int, num_of_subspec_bands: int, affine_transformation: AFFINE_TRANSFORMATION):
-
+    def __init__(self, num_of_channels: int, num_of_subspec_bands: int):
         """
-                    SubSpectral Normalisation - batch notmalisation, ale oddzielnie dla każdego podpasma częstotliwości.
-                    Clue programu to podzielić częstotliwości jednej mapy cech (liczba channels) na podpasma i dla każdego liczyć
-                    z osobna normalizację, ale to wszystko jest wciąż w ramach JEDNEJ mapy cech
+        SubSpectral Normalisation - batch notmalisation, ale oddzielnie dla każdego podpasma częstotliwości.
+        Clue programu to podzielić częstotliwości jednej mapy cech (liczba channels) na podpasma i dla każdego liczyć
+        z osobna normalizację, ale to wszystko jest wciąż w ramach JEDNEJ mapy cech
 
-                    WAŻNE: SSN(num_of_subspec_bands=1, AFFINE_TRANSFORMATION=All) tożsame z BATCHNORM
-                           SSN(num_of_subspec_bands=1, AFFINE_TRANSFORMATION=Sub) tożsame z BATCHNORM
+        WAŻNE: SSN(num_of_subspec_bands=1, AFFINE_TRANSFORMATION=All) tożsame z BATCHNORM
+               SSN(num_of_subspec_bands=1, AFFINE_TRANSFORMATION=Sub) tożsame z BATCHNORM
 
-                    :param num_of_channels: ile jest kanałów wejściowych
-                    :param num_of_subspec_bands: na ile podpasm ma być podzielone wejście
-                    :param affine_transformation: jaki typ SSN: {"all", "sub_band"}
-
-                """
-
+        :param num_of_channels: ile jest kanałów wejściowych
+        :param num_of_subspec_bands: na ile podpasm ma być podzielone wejście. Jeśli zostanie podane 1 to będzie
+        to zwykły batch noramlisation
+        """
         super().__init__()
 
         self.num_of_channels = num_of_channels
         self.num_of_subspec_bands = num_of_subspec_bands
-        self.affine_transformation = affine_transformation
-        self.epsilon = 1e-6 # jak w liczbach dualnych hehe, ale chyba nie od tego się to wzięło
+        #self.affine_transformation = affine_transformation
+        self.epsilon = 1e-6  # jak w liczbach dualnych hehe, ale chyba nie od tego się to wzięło
 
         # te gamma i beta mają postać [1, kanały, 1, 1, 1] - w zależności od potrzeb, wymiary = 1
         # są powielane (broadcastowane) po odpowiednich osiach np.: batch czy time
-        if affine_transformation == "all":
+        """if affine_transformation == "all":
             # po całej częstotliwości jest jedna gamma i jedna beta:
             self.gamma = nn.Parameter(torch.ones(1, num_of_channels, 1, 1)) # nie ma na początku skalowania
-            self.beta = nn.Parameter(torch.zeros(1, num_of_channels, 1, 1)) # nie chcemy na początku przesunięć
+            self.beta = nn.Parameter(torch.zeros(1, num_of_channels, 1, 1)) # nie chcemy na początku przesunięć"""
 
-        elif affine_transformation == "sub_band":
-            # tutaj jest jak batch normalisation, ale na Ch * S kanałach -> jak w paper
-            # trochę jak implementacja pojedynczego perceptronu tbh tylko zamiast 'w' jest γ, a zamiast 'b' jest β
-            # to jest to samo prawie co wyżej, ale będę mieć więcej w tensorze kanałów o skalowania przez liczbę podpasm
-            self.gamma = nn.Parameter(torch.ones(1, num_of_channels * self.num_of_subspec_bands, 1, 1))  # nie ma na początku skalowania
-            self.beta = nn.Parameter(torch.zeros(1, num_of_channels * self.num_of_subspec_bands, 1, 1))  # nie chcemy na początku przesunięć
+        #elif affine_transformation == "sub_band":
+        # tutaj jest jak batch normalisation, ale na Ch * S kanałach -> jak w paper
+        # trochę jak implementacja pojedynczego perceptronu tbh tylko zamiast 'w' jest γ, a zamiast 'b' jest β
+        # to jest to samo prawie co wyżej, ale będę mieć więcej w tensorze kanałów o skalowania przez liczbę podpasm
+        self.gamma = nn.Parameter(
+            torch.ones(1, num_of_channels * self.num_of_subspec_bands, 1, 1)
+        )  # nie ma na początku skalowania
+        self.beta = nn.Parameter(
+            torch.zeros(1, num_of_channels * self.num_of_subspec_bands, 1, 1)
+        )  # nie chcemy na początku przesunięć
 
-
-        else:
+        """else:
             raise ValueError(f"Niedozwolony rodzaj transformacji afinicznej: {affine_transformation}"
                              f"Musi to być jedna z: {AFFINE_TRANSFORMATION}")
-
+        """
 
     def forward(self, x):
         # nasz x to będzie miał postać [B, Ch, F, W] (nie wiem czemu w artykule używają W, skoro chodzi o czas)
         # no dobrze, w takim razie, zgodnie z SNN chcemy podzielić F na S (liczba podpasm) i dostaniemy szerokość podpasma
 
-        batch, channels, frequency_range, time = x.shape # bierzemy wymiary naszego tensora
+        batch, channels, frequency_range, time = x.shape  # bierzemy wymiary naszego tensora
         s = self.num_of_subspec_bands
 
-        if frequency_range % s != 0: # jeśli częstotliwość widma nie jest podzielne przez ilość podpasm to dupa
-            raise ValueError(f"Częstotliwości F = {frequency_range} nie są podzielne przez "
-                             f"wybraną, do SSN, liczbę podpasm = {s}!")
+        gamma = self.gamma
+        beta = self.beta
+
+        if frequency_range % s != 0:  # jeśli częstotliwość widma nie jest podzielne przez ilość podpasm to dupa
+
+            print(
+                f"Częstotliwości F = {frequency_range} nie są podzielne przez "
+                f"wybraną, do SSN, liczbę podpasm = {s}!\n"
+                f"Zmieniam wartość {s}"
+            )
+
+            # dopóki pdpasmo nie dzieli się na s
+            while s > 1 and (frequency_range % s != 0):
+                s -= 1
+                print(f"Szukam odpowiedniej ilości podpasm. Obecnie: {s}")
+
+                gamma = self.gamma[:, :channels * s, :, :]
+                beta = self.beta[:, :channels * s, :, :]
+
+            if frequency_range % s != 0:
+                s = 1
+                print(f"Niestety, możliwa jest jedynie normalizacja globalna, podpasm: {s}")
+
+                gamma = self.gamma[:, :channels * s, :, :]
+                beta = self.beta[:, :channels * s, :, :]
 
         # liczymy szerokość pasma subspektralnego
         sub_band_width = frequency_range // s
@@ -78,7 +99,7 @@ class SSN(nn.Module):
         # to, co się dzieje poniżej, można zrobić z batch normalisation (bo SSN to specjalny przypadek BN), ale tu jest
         # implementacja pokazująca podstawowe rozumienie BN
 
-        if self.affine_transformation == "all":
+        """if self.affine_transformation == "all":
 
             # nie kombinujemy z oddzielnymi gamma i beta, tylko zwykły BN
             mean = x.mean([0, 2, 3]).view(1, channels * s, 1, 1)
@@ -92,20 +113,22 @@ class SSN(nn.Module):
             x = self.gamma * x + self.beta # to jest super confusing, bo to są operacje WEKTOROWE i tu jest BROADCAST!
 
             return x
+        """
 
-        elif self.affine_transformation == "sub_band":
-            # jak batch normalisation, każde podpasmo ma swoje gamma i beta
-            x = x.view(batch, channels * s, sub_band_width, time)
-            mean = x.mean([0, 2, 3]).view(1, channels * s, 1, 1)
-            variance = x.var([0, 2, 3]).view(1, channels * s, 1, 1)
-            # ze wzorku na normalizację ogółem
-            x = (x - mean) / torch.sqrt(variance + self.epsilon)
-            x = x * self.gamma + self.beta
-            # i znowu mamy nasz tensor [B, Ch, F, W]
-            x = x.view(batch, channels, frequency_range, time)
-            # ze wzorku na ogólne SSN
+        #elif self.affine_transformation == "sub_band":
+        # jak batch normalisation, każde podpasmo ma swoje gamma i beta
+        x = x.view(batch, channels * s, sub_band_width, time)
+        mean = x.mean([0, 2, 3]).view(1, channels * s, 1, 1)
+        variance = x.var([0, 2, 3]).view(1, channels * s, 1, 1)
+        # ze wzorku na normalizację ogółem
+        x = (x - mean) / torch.sqrt(variance + self.epsilon)
+        x = x * gamma + beta
+        # i znowu mamy nasz tensor [B, Ch, F, W]
+        x = x.view(batch, channels, frequency_range, time)
+        # ze wzorku na ogólne SSN
 
-            return x
+        return x
+
 
 
 
@@ -151,11 +174,11 @@ class ConvBNReLU(nn.Module):
             nn.ReLU(inplace=True)
         )
 
-        def forward(self, x):
+    def forward(self, x):
 
-            y = self.block(x)
+        y = self.block(x)
 
-            return y
+        return y
 
 
 # TODO: check blok Residual
@@ -251,7 +274,9 @@ class BCResBlock(nn.Module):
         # "(...) The temporal convolutions in all BC-ResBlocks use dilation of d"
         # ... and dilation 'd' in the temporal dimension."
         td_conv = nn.Conv2d(in_channels=depthwise_channels, out_channels=depthwise_channels, kernel_size=(1, 3), stride=(1, 1),
-                            padding=(0, 1), dilation=self.dilation, groups=depthwise_channels, bias=False)
+                            padding=(0, self.dilation[1]), dilation=self.dilation, groups=depthwise_channels, bias=False)
+        # ten self.dilation[0] jest, żeby utrzymać wymiar czasowy
+        # out = ⌊((in + 2*p - d*(k-1) - 1)/s)⌋ + 1
 
         bn_f1 = nn.BatchNorm2d(depthwise_channels)
         # Swish = SiLU: https://docs.pytorch.org/docs/2.8/generated/torch.nn.SiLU.html#torch.nn.SiLU
@@ -297,6 +322,7 @@ class BCResBlock(nn.Module):
 
             y_f1 = self.f1(x_f1)
 
+            #print("y_f1", y_f1.shape, "y_f2", y_f2.shape)
             broadcasted_y_f1 = y_f1.expand_as(y_f2)
 
             y = F.relu(identity_y_f2 + broadcasted_y_f1)
