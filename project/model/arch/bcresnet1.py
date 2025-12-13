@@ -55,16 +55,16 @@ class BCResNet1(nn.Module):
                                                         dropout_rate=0.01, dilation=(1, 4),
                                                         is_transition=False))
 
-        self.bcresnet_stage4 = nn.Sequential(BCResBlock(in_channels=16, out_channels=20, ssn_subbands=2,
+        self.bcresnet_stage4 = nn.Sequential(BCResBlock(in_channels=16, out_channels=20, ssn_subbands=1,
                                                         dropout_rate=0.01, dilation=(1, 8),
                                                         is_transition=True),
-                                             BCResBlock(in_channels=20, out_channels=20, ssn_subbands=2,
+                                             BCResBlock(in_channels=20, out_channels=20, ssn_subbands=1,
                                                         dropout_rate=0.01, dilation=(1, 8),
                                                         is_transition=False),
-                                             BCResBlock(in_channels=20, out_channels=20, ssn_subbands=2,
+                                             BCResBlock(in_channels=20, out_channels=20, ssn_subbands=1,
                                                         dropout_rate=0.01, dilation=(1, 8),
                                                         is_transition=False),
-                                             BCResBlock(in_channels=20, out_channels=20, ssn_subbands=2,
+                                             BCResBlock(in_channels=20, out_channels=20, ssn_subbands=1,
                                                         dropout_rate=0.01, dilation=(1, 8),
                                                         is_transition=False)
                                              )
