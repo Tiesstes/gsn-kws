@@ -8,8 +8,6 @@ from torchaudio.datasets import SPEECHCOMMANDS
 
 from dataset import SpeechCommandsKWS
 
-from project.model.arch.blocks import BCResBlock
-from project.model.arch.blocks import ConvBNReLU
 from project.model.kws_net import KWSNet
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

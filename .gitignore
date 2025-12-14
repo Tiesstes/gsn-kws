@@ -1,5 +1,5 @@
 # Project exclude paths
-/project/SpeechCommands/
+/project/data/SpeechCommands/
 /.venv/
 /.idea/
 speech_commands_v0.02.tar.gz

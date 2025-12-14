@@ -23,6 +23,9 @@ class SSN(nn.Module):
         :param num_of_channels: ile jest kanałów wejściowych
         :param num_of_subspec_bands: na ile podpasm ma być podzielone wejście. Jeśli zostanie podane 1 to będzie
         to zwykły batch noramlisation
+
+        Trzeba mieć na uwadze, że w przypadku wybrania złej liczby podpasm,
+        algorytm spróbuje je dobrać sam poprzez odejmowanie 1, aż dojrzie do podzielności
         """
         super().__init__()
 
@@ -33,10 +36,7 @@ class SSN(nn.Module):
 
         # te gamma i beta mają postać [1, kanały, 1, 1, 1] - w zależności od potrzeb, wymiary = 1
         # są powielane (broadcastowane) po odpowiednich osiach np.: batch czy time
-        """if affine_transformation == "all":
-            # po całej częstotliwości jest jedna gamma i jedna beta:
-            self.gamma = nn.Parameter(torch.ones(1, num_of_channels, 1, 1)) # nie ma na początku skalowania
-            self.beta = nn.Parameter(torch.zeros(1, num_of_channels, 1, 1)) # nie chcemy na początku przesunięć"""
+
 
         #elif affine_transformation == "sub_band":
         # tutaj jest jak batch normalisation, ale na Ch * S kanałach -> jak w paper
@@ -49,13 +49,9 @@ class SSN(nn.Module):
             torch.zeros(1, num_of_channels * self.num_of_subspec_bands, 1, 1)
         )  # nie chcemy na początku przesunięć
 
-        """else:
-            raise ValueError(f"Niedozwolony rodzaj transformacji afinicznej: {affine_transformation}"
-                             f"Musi to być jedna z: {AFFINE_TRANSFORMATION}")
-        """
 
     def forward(self, x):
-        # nasz x to będzie miał postać [B, Ch, F, W] (nie wiem czemu w artykule używają W, skoro chodzi o czas)
+        # nasz x to będzie miał postać [B, Ch, F, W] (dobra w artykule jest W bo width, ale to mylące)
         # no dobrze, w takim razie, zgodnie z SNN chcemy podzielić F na S (liczba podpasm) i dostaniemy szerokość podpasma
 
         batch, channels, frequency_range, time = x.shape  # bierzemy wymiary naszego tensora
@@ -94,28 +90,10 @@ class SSN(nn.Module):
         # F trzeba podzielone na S i to jest to co wyżej, czyli nasza szerokość podpasma
         # zamieniamy ten x co wszedł na tensor, gdzie mamy więcej kanałów, ale częstotliwości tylko tyle ile podpasmo
         # czyli jak zmniejszyliśmy jeden wymiar /S to musimy gdzieś pomnożyć *S -> nie może wyparować w eter
-        x = x.view(batch, channels * s, sub_band_width, time)
 
-        # to, co się dzieje poniżej, można zrobić z batch normalisation (bo SSN to specjalny przypadek BN), ale tu jest
-        # implementacja pokazująca podstawowe rozumienie BN
+        # https://docs.pytorch.org/docs/2.8/tensor_view.html
+        x = x.view(batch, channels * s, sub_band_width, time) # view to trochę jak kopia, ale nie explicite
 
-        """if self.affine_transformation == "all":
-
-            # nie kombinujemy z oddzielnymi gamma i beta, tylko zwykły BN
-            mean = x.mean([0, 2, 3]).view(1, channels * s, 1, 1)
-            variance = x.var([0, 2, 3]).view(1, channels * s, 1, 1)
-            # ze wzorku na normalizację ogółem
-            x = (x - mean) / torch.sqrt(variance + self.epsilon)
-
-            # i znowu mamy nasz tensor [B, Ch, F, W]
-            x = x.view(batch, channels, frequency_range, time)
-            # ze wzorku na ogólne SSN
-            x = self.gamma * x + self.beta # to jest super confusing, bo to są operacje WEKTOROWE i tu jest BROADCAST!
-
-            return x
-        """
-
-        #elif self.affine_transformation == "sub_band":
         # jak batch normalisation, każde podpasmo ma swoje gamma i beta
         x = x.view(batch, channels * s, sub_band_width, time)
         mean = x.mean([0, 2, 3]).view(1, channels * s, 1, 1)
@@ -128,8 +106,6 @@ class SSN(nn.Module):
         # ze wzorku na ogólne SSN
 
         return x
-
-
 
 
 
@@ -180,8 +156,6 @@ class ConvBNReLU(nn.Module):
 
         return y
 
-
-# TODO: check blok Residual
 
 # y = x + f2(x) + BC(f1(avgpool(f2(x))))
 class BCResBlock(nn.Module):
@@ -257,16 +231,16 @@ class BCResBlock(nn.Module):
         fd_conv = nn.Conv2d(in_channels=depthwise_channels, out_channels=depthwise_channels, kernel_size=(3,1),
                             stride=self.stride,  padding=(1, 0), groups=depthwise_channels , bias=False)
 
-        # jeśli ssn_subbands = 1 to i tak to będzie affine = "all"
-        # TODO: można zmienić implementację SSN bo w sumie nie trzeba mieć affine "all"
-        ssn = SSN(num_of_channels=depthwise_channels, num_of_subspec_bands=ssn_subbands, affine_transformation="sub_band")
+        ssn = SSN(num_of_channels=depthwise_channels, num_of_subspec_bands=ssn_subbands)
+
 
         f2.append(fd_conv)
         f2.append(ssn)
-
         self.f2 = nn.Sequential(*f2)
 
+
         self.f_avg_pool = nn.AdaptiveAvgPool2d((1, None)) # [B, Ch, F, W] -> [B, Ch, 1, W] bierze F do uśrednienia, ale nie W (czas), bo tu jest podany kernel size jaki ma wyjść
+
 
         # "(...) The f1 is a composite of a 1x3 temporal depthwise convolution followed by BN,
         # swish activation [15], 1x1 pointwise convolution, and channel-wise dropout of dropout rate p."
@@ -323,7 +297,7 @@ class BCResBlock(nn.Module):
             y_f1 = self.f1(x_f1)
 
             #print("y_f1", y_f1.shape, "y_f2", y_f2.shape)
-            broadcasted_y_f1 = y_f1.expand_as(y_f2)
+            broadcasted_y_f1 = y_f1.expand_as(y_f2) # bo to będzie [B, Ch, 1, W]
 
             y = F.relu(identity_y_f2 + broadcasted_y_f1)
 

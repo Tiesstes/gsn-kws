@@ -3,7 +3,6 @@ from torch import nn
 
 from project.model.arch.bcresnet1 import BCResNet1
 
-# TODO: finish model creation, embedding and fusion
 
 # szkielet sieci
 class KWSNet(nn.Module):
@@ -39,4 +38,5 @@ class KWSNet(nn.Module):
         logits = self.classifier(fused) # logit, to funkcja mapująca prawdopodobieństwo [z 32 map cech robimy 12 klas]
                                         # z wartości -inf do +inf i ona prawdę nam powie
         return logits
+
 

@@ -8,7 +8,7 @@ from torch.utils.data import Dataset
 from torchaudio import transforms as T
 from torch.nn import functional as F
 
-# core words z README.MD do SC z PyTorch jest inne, ale robimy zgodnie z benchmarkiem 12 klas
+# core words z README.MD do SC z PyTorch jest inne, ale robimy zgodnie z benchmarkiem 12 klas jak Qualcomm
 TARGET_LABELS = [ "yes", "no", "up", "down", "left", "right", "on", "off", "stop", "go"]
 
 # na razie tu 25
@@ -19,7 +19,6 @@ AUXILIARY = [ "bed", "bird", "cat", "dog", "happy", "house", "marvin", "sheila",
 
 
 class SpeechCommandsKWS(Dataset):
-
     def __init__(self, dataset, noise_dir, duration=1.0, sample_rate=16000, number_of_mel_bands=40):
         """
         Klasa dataset obsługująca GSC v.2 do projektu
@@ -109,7 +108,7 @@ class SpeechCommandsKWS(Dataset):
             to_pad = self.target_sample_length - waveform.shape[1] # różnica między chcianą długością a realną długością danych
             waveform = F.pad(waveform, (0, to_pad))
 
-        # każde wywołanie __getitem__ to i tak inny kawałek nagrania z noise - automatyczny shuffle
+        # każde wywołanie __getitem__ to i tak inny kawałek nagrania z noise - automatyczny "shuffle"
         elif waveform_length > self.target_sample_length:
 
             # losowanie jednego elementu torchem i zamiana na int

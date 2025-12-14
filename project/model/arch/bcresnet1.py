@@ -1,7 +1,6 @@
 from project.model.arch.blocks import *
 
 
-# TODO: clean up forward function
 
 class BCResNet1(nn.Module):
 
@@ -78,14 +77,13 @@ class BCResNet1(nn.Module):
                                   nn.AdaptiveAvgPool2d((1, 1))) # uśrednienie zarówno po częstotliwości, jak i czasie - global
 
                                   # nn.Conv2d(in_channels=32, out_channels=self.output_size, kernel_size=(1,1))) bo to już klasyfikacja liniowa
-
-        # tensor z aartykułu ma być: [B, klasy=12, 1, 1]
+                                  # na koniec tensor z artykułu był: [B, klasy=12, 1, 1]
 
         self.output_channels = 32
 
     def forward(self, x):
 
-        # chyba to jakoś ładniej trzeba
+        # chyba to jakoś ładniej można, ale tak chociaż rozumiem co i jak
         y = self.head(x)
         y = self.bcresnet_stage1(y)
         y = self.bcresnet_stage2(y)
@@ -93,7 +91,7 @@ class BCResNet1(nn.Module):
         y = self.bcresnet_stage4(y)
         y = self.tail(y)
 
-        # a jednak możemy się pozbyć już tych wymiarów - robię na razie dodawanie nic nie kombinuję z fusion point
+        # a jednak możemy się pozbyć już tych wymiarów - robię na razie dodawanie nic nie kombinuję
         y = y.squeeze(-1).squeeze(-1) # usunięcie wymiarów, na indeksie określonym jako (-1), czyli ostatni
 
         return y
