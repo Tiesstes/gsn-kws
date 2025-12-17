@@ -29,7 +29,7 @@ class KWSNet(nn.Module):
         self.classifier = nn.Linear(self.backbone.output_channels,
                                     num_of_classes)
 
-    def forward(self, x, speaker_id):
+    def forward(self, x, speaker_id) -> torch.Tensor:
         speaker_vector = self.speaker_embedding(speaker_id)  # [B, emb_dim]
         backbone_features = self.backbone(x)  # [B, output_channels_dim]
 

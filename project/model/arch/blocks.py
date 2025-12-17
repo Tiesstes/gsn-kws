@@ -1,7 +1,7 @@
 from typing import Literal
 
 import torch
-from torch import nn
+from torch import nn, Tensor
 from torch.nn import functional as F
 
 # na wejście wchodzi tensor [B, 1, 40, W] batch, kanał, ilość pasm częstotliwości i czas trwania
@@ -50,7 +50,7 @@ class SSN(nn.Module):
         )  # nie chcemy na początku przesunięć
 
 
-    def forward(self, x):
+    def forward(self, x) -> torch.Tensor:
         # nasz x to będzie miał postać [B, Ch, F, W] (dobra w artykule jest W bo width, ale to mylące)
         # no dobrze, w takim razie, zgodnie z SNN chcemy podzielić F na S (liczba podpasm) i dostaniemy szerokość podpasma
 
@@ -62,26 +62,23 @@ class SSN(nn.Module):
 
         if frequency_range % s != 0:  # jeśli częstotliwość widma nie jest podzielne przez ilość podpasm to dupa
 
-            print(
-                f"Częstotliwości F = {frequency_range} nie są podzielne przez "
+            print(f"Częstotliwości F = {frequency_range} nie są podzielne przez "
                 f"wybraną, do SSN, liczbę podpasm = {s}!\n"
-                f"Zmieniam wartość {s}"
-            )
+                f"Zmieniam wartość {s}")
 
-            # dopóki pdpasmo nie dzieli się na s
+            # dopóki ppasmo nie dzieli się na s (podpasma)
             while s > 1 and (frequency_range % s != 0):
+                print(f"PRZED: s={s}, freq % s = {frequency_range % s}")
                 s -= 1
-                print(f"Szukam odpowiedniej ilości podpasm. Obecnie: {s}")
-
-                gamma = self.gamma[:, :channels * s, :, :]
-                beta = self.beta[:, :channels * s, :, :]
+                print(f"PO: s={s}, freq % s = {frequency_range % s}")
+                print(f"Szukam odpowiedniej liczby podpasm. Obecnie: {s}")
 
             if frequency_range % s != 0:
                 s = 1
                 print(f"Niestety, możliwa jest jedynie normalizacja globalna, podpasm: {s}")
 
-                gamma = self.gamma[:, :channels * s, :, :]
-                beta = self.beta[:, :channels * s, :, :]
+        gamma = self.gamma[:, :channels * s, :, :]
+        beta = self.beta[:, :channels * s, :, :]
 
         # liczymy szerokość pasma subspektralnego
         sub_band_width = frequency_range // s
@@ -150,7 +147,7 @@ class ConvBNReLU(nn.Module):
             nn.ReLU(inplace=True)
         )
 
-    def forward(self, x):
+    def forward(self, x) -> torch.Tensor:
 
         y = self.block(x)
 
@@ -245,18 +242,23 @@ class BCResBlock(nn.Module):
         # "(...) The f1 is a composite of a 1x3 temporal depthwise convolution followed by BN,
         # swish activation [15], 1x1 pointwise convolution, and channel-wise dropout of dropout rate p."
 
+
         # "(...) The temporal convolutions in all BC-ResBlocks use dilation of d"
         # ... and dilation 'd' in the temporal dimension."
+
         td_conv = nn.Conv2d(in_channels=depthwise_channels, out_channels=depthwise_channels, kernel_size=(1, 3), stride=(1, 1),
                             padding=(0, self.dilation[1]), dilation=self.dilation, groups=depthwise_channels, bias=False)
-        # ten self.dilation[0] jest, żeby utrzymać wymiar czasowy
-        # out = ⌊((in + 2*p - d*(k-1) - 1)/s)⌋ + 1
+        # ten self.dilation[0] jest, żeby utrzymać wymiar czasowy out = ⌊((in + 2*p - d*(k-1) - 1)/s)⌋ + 1
+
 
         bn_f1 = nn.BatchNorm2d(depthwise_channels)
+
         # Swish = SiLU: https://docs.pytorch.org/docs/2.8/generated/torch.nn.SiLU.html#torch.nn.SiLU
         swish_f1 = nn.SiLU(inplace=True)
+
         conv_1x1_f1 = nn.Conv2d(in_channels=depthwise_channels, out_channels=depthwise_channels, kernel_size=(1,1), bias=False)
         dropout_f1 = nn.Dropout2d(p=self.dropout_rate)
+
         # IMPORTANT: PyTorch sam realizuje broadcast, jeśli wymiary na to pozwalają
 
         f1.append(td_conv)
@@ -268,7 +270,7 @@ class BCResBlock(nn.Module):
         self.f1 = nn.Sequential(*f1)
 
 
-    def forward(self, x):
+    def forward(self, x) -> torch.Tensor:
         # wejście będzie [B, Ch, F, W]
 
         if self.is_transition == False:
@@ -276,7 +278,7 @@ class BCResBlock(nn.Module):
 
             y_f2 = self.f2(x)
 
-            x_f1 = self.f_avg_pool(y_f2) # -> [B, Ch, 1, W]
+            x_f1 = self.f_avg_pool(y_f2) # -> [B, Ch, 1, W] bo uśrednienie w wymiarze częśtotliwości
 
             y_f1 = self.f1(x_f1)
 

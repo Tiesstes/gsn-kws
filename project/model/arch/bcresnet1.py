@@ -41,16 +41,16 @@ class BCResNet1(nn.Module):
                                                         dropout_rate=0.01, dilation=(1, 2),
                                                         is_transition=False))
 
-        self.bcresnet_stage3 = nn.Sequential(BCResBlock(in_channels=12, out_channels=16, ssn_subbands=2,
+        self.bcresnet_stage3 = nn.Sequential(BCResBlock(in_channels=12, out_channels=16, ssn_subbands=5,
                                                         dropout_rate=0.01, stride=(2,1), dilation=(1, 4),
                                                         is_transition=True),
-                                             BCResBlock(in_channels=16, out_channels=16, ssn_subbands=2,
+                                             BCResBlock(in_channels=16, out_channels=16, ssn_subbands=5,
                                                         dropout_rate=0.01, dilation=(1, 4),
                                                         is_transition=False),
-                                             BCResBlock(in_channels=16, out_channels=16, ssn_subbands=2,
+                                             BCResBlock(in_channels=16, out_channels=16, ssn_subbands=5,
                                                         dropout_rate=0.01, dilation=(1, 4),
                                                         is_transition=False),
-                                             BCResBlock(in_channels=16, out_channels=16, ssn_subbands=2,
+                                             BCResBlock(in_channels=16, out_channels=16, ssn_subbands=5,
                                                         dropout_rate=0.01, dilation=(1, 4),
                                                         is_transition=False))
 
@@ -81,9 +81,9 @@ class BCResNet1(nn.Module):
 
         self.output_channels = 32
 
-    def forward(self, x):
+    def forward(self, x) -> torch.Tensor:
 
-        # chyba to jakoś ładniej można, ale tak chociaż rozumiem co i jak
+        # może to jakoś ładniej można, ale tak chociaż rozumiem co i jak
         y = self.head(x)
         y = self.bcresnet_stage1(y)
         y = self.bcresnet_stage2(y)
