@@ -34,7 +34,7 @@ czysty *x* do końcowego argumentu dla aktywacji - jak w przypadku bloku *normal
 - **`IndexBuilder`** – klasa do budowy podziałów na zbiory (train/val/test) oraz dostarczania statystyk
 - **`SpeechCommandsKWS`** – klasa dziedzicząca po `Dataset` PyTorch, która konwertuje audio na mel-spektrogramy i balansuje klas
 
-### bloki sieci BC-Res-Net-1 `blocks.py`
+## Bloki sieci BC-Res-Net-1 `blocks.py`
 
 ### 1. Klasa `SSN` (SubSpectral Normalisation)
 
@@ -42,6 +42,11 @@ czysty *x* do końcowego argumentu dla aktywacji - jak w przypadku bloku *normal
 2. dla każdego podpasma liczy osobno średnią i wariancję
 3. normalizuje każde podpasmo niezależnie (ale w ramach tych samych kanałów)
 4. ma osobne parametry **gamma** i **beta** dla każdego podpasma
+
+**ISTOTNE**
+
+`S = 1` → zwykła batch norm
+`S > 1` → normalizacja ze spectralnym podziałem
 
 ### 2. Klasa `ConvBNReLU`
 
