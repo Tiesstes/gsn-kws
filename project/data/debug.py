@@ -47,6 +47,7 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("CUDA DEVICE:", torch.cuda.get_device_name(0))
     print("Torch version:", torch.__version__)
+    print("")
 
     # podzbiory od razu:
     train_base = SPEECHCOMMANDS(root=GSC_PATH, subset="training", download=True)
@@ -59,7 +60,7 @@ if __name__ == "__main__":
     print("Ścieżka, w której znajduje się katalog pobranego bazowego dataset'u:", GSC_PATH)
 
     # jednak z góry mówimy ile jest speaker'ów, może do poprawy potem
-    model = KWSNet(12, train_dataset.speaker_counter.__len__())
+    model = KWSNet(12, train_dataset.speaker_counter.__len__()) # zrobić do tego decorator, bo wygląda strasznie
     model = model.to(device)
 
     criterion = torch.nn.CrossEntropyLoss()
