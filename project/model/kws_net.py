@@ -14,7 +14,7 @@ class KWSNet(nn.Module):
         :param num_of_classes: liczba klas w datasecie
         :param num_of_speakers: liczba mówców w datasecie -> ile ma być wektorów embeddingu
         Atrybut:
-        *speaker_emb_dim* to wielkość wektora embedding'u dla mówców
+        *speaker_emb_dim* to wielkość wektora embedding'u dla mówców -> wynosi 32, bo 32 mapy cech BC-ResNet-1
         """
         super().__init__()
 

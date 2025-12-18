@@ -1,5 +1,4 @@
 import time
-from collections import Counter
 from pathlib import Path
 
 import torch
@@ -57,20 +56,21 @@ test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False, num
 
 if __name__ == "__main__":
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("CUDA DEVICE:", torch.cuda.get_device_name(0))
     print("Torch version:", torch.__version__)
+    print("")
 
 
     # jednak z góry mówimy ile jest speaker'ów, może do poprawy potem
     model = KWSNet(12, train_dataset.speaker_counter.__len__())
-    model = model.to(device)
+    model = model.to(DEVICE)
 
     print("[Architektura sieci]")
     summary(model,
         input_data=(
-            torch.randn(BATCH_SIZE, 1, 40, 101).to(device),  # tu log_mel_spectrogram: [B, 1, F, T]
-            torch.zeros(BATCH_SIZE, dtype=torch.long).to(device)  # tu speaker_id: [B]
+            torch.randn(BATCH_SIZE, 1, 40, 101).to(DEVICE),  # tu log_mel_spectrogram: [B, 1, F, T]
+            torch.zeros(BATCH_SIZE, dtype=torch.long).to(DEVICE)  # tu speaker_id: [B]
         ),
         col_names=("input_size", "output_size", "num_params", "kernel_size"),
         depth=5)
@@ -99,9 +99,9 @@ if __name__ == "__main__":
 
         for batch in train_loader:
 
-            x = batch["log_mel_spectrogram"].to(device)  # ma być [B, 1, C, T]
-            speaker = batch["speaker_id"].long().to(device)
-            y = batch["label"].long().to(device)
+            x = batch["log_mel_spectrogram"].to(DEVICE)  # ma być [B, 1, C, T]
+            speaker = batch["speaker_id"].long().to(DEVICE)
+            y = batch["label"].long().to(DEVICE)
 
             optimiser.zero_grad() # zeruj gradienty, bo przecież to nowy batch
             logits = model(x, speaker)  # (B, num_classes)
