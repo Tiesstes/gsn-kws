@@ -46,7 +46,7 @@ czysty *x* do końcowego argumentu dla aktywacji - jak w przypadku bloku *normal
 **ISTOTNE**
 
 `S = 1` → zwykłe batch norm
-`S > 1` → normalizacja ze spectralnym podziałem
+`S > 1` → normalizacja z podziałem na podpasma
 
 ### 2. Klasa `ConvBNReLU`
 
