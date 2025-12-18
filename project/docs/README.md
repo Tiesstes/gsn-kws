@@ -76,7 +76,7 @@ $y = \text{ReLU}(x + f_2(x) + \text{broadcast}(f_1(\text{avg_pool}(f_2(x)))))$
 - Conv2d pointwise `1x1`
 - Dropout2d
 
-### sieć BC-ResNet-1 -`bcresnet1.py`
+### sieć BC-ResNet-1 `bcresnet1.py`
 
 Nasz **BC-ResNet-1** do klasyfikacji mowy:
 - przyjmuje na wejściu **logmel-spektrogram** o kształcie `[B, 1, 40, 101]` (batch, kanały, pasma melowe, ramki czasowe),
@@ -85,7 +85,7 @@ Nasz **BC-ResNet-1** do klasyfikacji mowy:
 który potem łączony jest z wektorem cech embedding'u o tym samym kształcie (addycja)
 
 
-### sieć ostateczna -`kwsnet.py`
+### sieć ostateczna `kwsnet.py`
 
 Tutaj następuje połączenie sieci BC-ResNet-1 z warstwą embedding'u. 
 Fuzja jest zrealizowana przez addycję **wektora mówców** do map cech stworzonych przez
