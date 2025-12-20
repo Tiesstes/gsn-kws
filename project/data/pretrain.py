@@ -39,13 +39,13 @@ print()
 
 
 # metoda dla epoki
-def run_epoch(model, data_loader, device, optimiser=None):
+def run_epoch(net_model, data_loader, device, net_optimiser=None):
 
-    if optimiser is not None:
-        model.train(True)
+    if net_optimiser is not None:
+        net_model.train(True)
         mode = torch.enable_grad()
     else:
-        model.train(False)
+        net_model.train(False)
         mode = torch.no_grad()
 
     criterion = torch.nn.CrossEntropyLoss()
@@ -56,22 +56,22 @@ def run_epoch(model, data_loader, device, optimiser=None):
     #context = torch.enable_grad() if train_mode else torch.no_grad()
     with mode:
         for batch in data_loader:
-            x = batch["log_mel_spectrogram"].to(device)
+            x_input = batch["log_mel_spectrogram"].to(device)
             y = batch["label"].to(device)
-            spk = batch["speaker_id"].to(device)
+            current_speaker = batch["speaker_id"].to(device)
 
-            logits = model(x, spk)
+            logits = net_model(x_input, current_speaker)
             loss = criterion(logits, y)
 
-            if optimiser is not None:
-                optimiser.zero_grad()
+            if net_optimiser is not None:
+                net_optimiser.zero_grad()
                 loss.backward()
-                optimiser.step()
+                net_optimiser.step()
 
-            total_loss += loss.detach().item() * x.shape[0]
+            total_loss += loss.detach().item() * x_input.shape[0]
             predictions = logits.detach().argmax(dim=1)
             total_correct += int((predictions == y).sum())
-            total_n += x.shape[0]
+            total_n += x_input.shape[0]
 
     return total_loss / max(1, total_n), total_correct / max(1, total_n)
 
@@ -151,8 +151,8 @@ if __name__ == "__main__":
         epoch_start = time.perf_counter()
 
 
-        training_loss, training_accuracy = run_epoch(model, train_loader, DEVICE, optimiser=optimiser)
-        val_loss, val_accuracy = run_epoch(model, val_loader, DEVICE, optimiser=None)
+        training_loss, training_accuracy = run_epoch(model, train_loader, DEVICE, net_optimiser=optimiser)
+        val_loss, val_accuracy = run_epoch(model, val_loader, DEVICE, net_optimiser=None)
 
         scheduler.step() # po epoce (zmieni lr, jeśli epoka przeszła step size
 
