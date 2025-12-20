@@ -31,8 +31,8 @@ czysty *x* do końcowego argumentu dla aktywacji - jak w przypadku bloku *normal
 
 - **`TARGET_LABELS`** – keywords, które model ma nauczyć się rozpoznawać (np. `yes`, `no`, `up`, `down`, …)
 - **`AUXILIARY`** – dodatkowe słowa traktowane jako kategorię „unknown" (np. `cat`, `dog`, `happy`, …)
-- **`IndexBuilder`** – klasa do budowy podziałów na zbiory (train/val/test) oraz dostarczania statystyk
-- **`SpeechCommandsKWS`** – klasa dziedzicząca po `Dataset` PyTorch, która konwertuje audio na mel-spektrogramy i balansuje klas
+- **`SplitBuilder`** – klasa do budowy podziałów na zbiory (train/val/test) oraz trzymająca 
+- **`SpeechCommandsKWS`** – klasa dziedzicząca po `Dataset` PyTorch, która konwertuje audio na mel-spektrogramy i balansuje klasy
 
 ### bloki sieci BC-Res-Net-1 - `blocks.py`
 
@@ -61,7 +61,7 @@ Obecny w **BC-ResNet-1** w podstrukturach:
 
 Zgodnie z artykułem:
 
-$y = \text{ReLU}(x + f_2(x) + \text{broadcast}(f_1(\text{avg_pool}(f_2(x)))))$
+$$y = \text{ReLU}(x + f_2(x) + \text{broadcast}(f_1(\text{avg_pool}(f_2(x)))))$$
 
 `f2` **(część frequency-depthwise):**
 - Conv2d depthwise `3x1` (wymiar częstotliwości) ze `stride`, `padding=(1,0)`, `groups=out_channels`
