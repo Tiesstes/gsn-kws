@@ -142,8 +142,8 @@ if __name__ == "__main__":
     old_label_map = pretrain_checkpoint["label_map"]
     class_names = sorted(old_label_map.keys())
 
-    print(f"  Liczba klas: {len(class_names)}")
-    print()
+    print(f"Liczba klas: {len(class_names)}")
+    print("")
 
     # finetune checkpoint (jeśli istnieje)
 
@@ -222,5 +222,5 @@ if __name__ == "__main__":
         print("PORÓWNANIE MODELU 2 FAZ")
         print("=" * 60)
         print(f"Accuracy improvement: {accuracy_finetune - accuracy_pretrain:+.4f}")
-        print(f"  Pretrain:  {accuracy_pretrain:.4f}")
-        print(f"  Finetune:  {accuracy_finetune:.4f}")
+        print(f"Pretrain:  {accuracy_pretrain:.4f}")
+        print(f"Finetune:  {accuracy_finetune:.4f}")
