@@ -95,7 +95,7 @@ class SplitBuilder:
     def build_speaker_id_map_from_speakers(self, speakers: set[str]):
         speakers = set(speakers)
         speakers.update({"none", "unk"})
-        return {spk: i for i, spk in enumerate(sorted(speakers))}
+        return {speaker: i for i, speaker in enumerate(sorted(speakers))}
 
     def _collect_KW_speaker_stats(self):
         """
