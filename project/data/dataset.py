@@ -32,19 +32,18 @@ class SplitBuilder:
     def __init__(
             self,
             base_dataset,
-            fine_tune_max_samples_per_class: int = 6,
+            fine_tune_min_samples_per_class: int = 6,
             pretrain_val_ratio: float = 0.1,
-            seed: int = 1234,
-    ):
+            seed: int = 1234):
         """
         :param base_dataset: dataset bazowy
-        :param fine_tune_max_samples_per_class: ile maksymalnie wypowiedzi na klasę może mieć mówca trafiający do datasetu pretreningu
+        :param fine_tune_min_samples_per_class: ile maksymalnie wypowiedzi na klasę może mieć mówca trafiający do datasetu pretreningu
         :param pretrain_val_ratio: procent bazowego datasetu, który ma stanowić zbiór walidacyjny
         :param seed: ziarno losowe
         """
         self.base_dataset = base_dataset
 
-        self.fine_tune_max_samples_per_class = fine_tune_max_samples_per_class # graniczna liczba nagrań dla pretreningu
+        self.fine_tune_min_samples_per_class = fine_tune_min_samples_per_class # graniczna liczba nagrań dla pretreningu
         self.pretrain_val_ratio = pretrain_val_ratio
         self.seed = seed
         self._rng = random.Random(seed)
@@ -77,7 +76,7 @@ class SplitBuilder:
                 continue
 
             min_target = min(len(self.speaker_stats[speaker][lbl]) for lbl in TARGET_LABELS)
-            if min_target >= self.fine_tune_max_samples_per_class:
+            if min_target >= self.fine_tune_min_samples_per_class:
                 speaker_rich.add(speaker)
 
         # poor: wszyscy pozostali (w tym AUX-only)
@@ -118,6 +117,7 @@ class SplitBuilder:
                 self.speaker_stats[speaker][label].append(idx)
 
 
+    # ostatecznie funkcjonalność przeniesiona wyżej (do _divide_speakers) # TODO: wywali ć to
     def _speaker_max_TARGET_count(self, speaker: str) -> int:
         """
         Metoda, która zwraca liczbę nagrań najliczniejszej klasy z TARGET dla podanego mówcy
@@ -168,7 +168,7 @@ class SplitBuilder:
             "train": audiofile_indices[:split],
             "val": audiofile_indices[split:],
             "allowed_speakers": self._speaker_poor,
-            "stats": self._speaker_statistics(self._speaker_poor),
+            "stats": self._speaker_statistics(self._speaker_poor)
         }
 
     def build_finetune_splits(self) -> dict:
@@ -193,7 +193,7 @@ class SplitBuilder:
             for label, idxs in self.speaker_stats[speaker].items():
 
                 # Jeśli reprezentacja klasy dla danego mówcy jest mniejsza niż zdefiniowana, pomiń
-                if len(idxs) < self.fine_tune_max_samples_per_class:
+                if len(idxs) < self.fine_tune_min_samples_per_class:
                     continue
 
                 # wymieszaj kolejność indeksów nagrań
@@ -208,8 +208,7 @@ class SplitBuilder:
             "val": val,
             "test": test,
             "allowed_speakers": self._speaker_rich,
-            "stats": self._speaker_statistics(self._speaker_rich),
-        }
+            "stats": self._speaker_statistics(self._speaker_rich)}
 
     def _speaker_statistics(self, speakers) -> dict:
         """

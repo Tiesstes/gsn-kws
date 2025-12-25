@@ -61,7 +61,7 @@ Obecny w **BC-ResNet-1** w podstrukturach:
 
 Zgodnie z artykułem:
 
-$$y = \text{ReLU}(x + f_2(x) + \text{broadcast}(f_1(\text{avg_pool}(f_2(x)))))$$
+$y = \text{ReLU}(x + f_2(x) + \text{broadcast}(f_1(\text{avg_pool}(f_2(x)))))$
 
 `f2` **(część frequency-depthwise):**
 - Conv2d depthwise `3x1` (wymiar częstotliwości) ze `stride`, `padding=(1,0)`, `groups=out_channels`

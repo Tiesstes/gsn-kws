@@ -136,7 +136,7 @@ if __name__ == "__main__":
     # znowu SplitBuilder
     print("Robię splity finetune...")
     dataset_indexer = SplitBuilder(
-        base_data, fine_tune_max_samples_per_class=6,pretrain_val_ratio=0.1, seed=1234, )
+        base_data, fine_tune_min_samples_per_class=6,pretrain_val_ratio=0.1, seed=1234, )
     finetune_split = dataset_indexer.build_finetune_splits()
 
     print(f"Liczba speakers finetune: {len(finetune_split['allowed_speakers'])}")
@@ -186,8 +186,9 @@ if __name__ == "__main__":
     print("Ładuję wagi modelu z pliku pretreningowego...")
     model.load_state_dict(old_model_state)
 
-    # zwiększ embedding dla nowych speaker'ów
+    # zwiększ embedding dla nowych speaker'ów niepotrzebne
     model.ensure_num_of_speakers(num_of_speakers)
+
 
 
     # morzimy backbone

@@ -123,10 +123,9 @@ if __name__ == "__main__":
     print("Robię splity...")
 
     dataset_indexer = SplitBuilder(base_data,
-        fine_tune_max_samples_per_class=6,
-        pretrain_val_ratio=0.1,
-        seed=1234,
-    )
+                                   fine_tune_min_samples_per_class=6,
+                                   pretrain_val_ratio=0.1,
+                                   seed=1234)
 
     finetune_split = dataset_indexer.build_finetune_splits()
 

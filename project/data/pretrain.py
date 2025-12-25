@@ -48,7 +48,7 @@ def run_epoch(net_model, data_loader, device, net_optimiser=None):
         net_model.train(False)
         mode = torch.no_grad()
 
-    criterion = torch.nn.CrossEntropyLoss()
+    criterion = torch.nn.CrossEntropyLoss() # TODO: wywalić na zewnątrz
     total_loss = 0.0
     total_correct = 0
     total_n = 0
@@ -85,7 +85,7 @@ if __name__ == "__main__":
     print("Robię splity z SplitBuilder...")
 
     # Tu definicja podziałów na podzbiory dla fazy pretreningu
-    dataset_indexer = SplitBuilder(base_data, fine_tune_max_samples_per_class=6,pretrain_val_ratio=0.1,seed=1234)
+    dataset_indexer = SplitBuilder(base_data, fine_tune_min_samples_per_class=6, pretrain_val_ratio=0.1, seed=1234)
     pretrain_split = dataset_indexer.build_pretrain_splits()
 
 
@@ -117,7 +117,7 @@ if __name__ == "__main__":
 
     model = KWSNet(num_of_classes=num_of_classes, num_of_speakers=num_of_speakers).to(DEVICE)
 
-    # optymalizator i harmongramator (okresowa zmiana wartości learning_rate
+    # optymalizator i harmongramator (okresowa zmiana wartości learning_rate)
 
     # weights decay to regularyzacja L2 - karze duże wagi;
     # czyli dodaje karę do straty jako λ * w^2 (to się dziele w optymalizatorze),
