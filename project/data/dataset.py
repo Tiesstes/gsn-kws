@@ -29,18 +29,19 @@ class SplitBuilder:
     NOTE: klasa trzyma w sobie wszelkie niezbędne indeksy potrzebne do wyciągnięcia danych
     """
 
-    def __init__(
-            self,
+    def __init__(self,
             base_dataset,
             fine_tune_min_samples_per_class: int = 6,
             pretrain_val_ratio: float = 0.1,
             seed: int = 1234):
+
         """
         :param base_dataset: dataset bazowy
         :param fine_tune_min_samples_per_class: ile maksymalnie wypowiedzi na klasę może mieć mówca trafiający do datasetu pretreningu
         :param pretrain_val_ratio: procent bazowego datasetu, który ma stanowić zbiór walidacyjny
         :param seed: ziarno losowe
         """
+
         self.base_dataset = base_dataset
 
         self.fine_tune_min_samples_per_class = fine_tune_min_samples_per_class # graniczna liczba nagrań dla pretreningu
