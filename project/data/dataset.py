@@ -235,7 +235,8 @@ class SpeechCommandsKWS(Dataset):
         silence_per_target= 1.0,
         unknown_to_target_ratio=1.0,
         seed= 1234,
-    ):
+        deterministic: bool = False # przez to będą wybierane pliki losowo lub deterministycznie (zmienione __getitem__ i _crop_or_pad)
+     ):
         """
         Klasa dataset obsługująca GSC v.2 do projektu
 
@@ -249,6 +250,7 @@ class SpeechCommandsKWS(Dataset):
         :param silence_per_target: mnożnik klasy "silence" względem średniej liczności klas targetowych
         :param unknown_to_target_ratio: mnożnik klasy "unknown" względem średniej liczności klas targetowych
         :param seed: ziarno generatora losowego
+        :param deterministic: czy dane mają być deterministyczne (dla walidacji i ewaluacji tak)
 
         :return: None
         """
@@ -260,7 +262,8 @@ class SpeechCommandsKWS(Dataset):
         self._rng = random.Random(seed)
         # żeby ustandaryzować czas trwania
         self._target_sample_length = int(duration * sample_rate)
-        self._noise_path = list(Path(noise_dir).glob("*.wav"))
+        self._noise_path = sorted(Path(noise_dir).glob("*.wav")) # posortuj
+        self.deterministic = deterministic
 
         # COLLECT UNKNOWN (SAFE)
         self.unknown_indices = []
@@ -312,14 +315,18 @@ class SpeechCommandsKWS(Dataset):
 
     def __getitem__(self, idx):
 
-
         # słabo tylko, że silence jest niedeterministyczny dla nas
         label, index = self.final_indices[idx]
 
         if label == "silence": # tworzy plik próbki losowo
-            noise_file = self._rng.choice(self._noise_path)
-            waveform, _ = torchaudio.load(noise_file)
-            speaker = "none"
+            if not self.deterministic:
+                noise_file = self._rng.choice(self._noise_path)
+                waveform, _ = torchaudio.load(noise_file)
+            else:
+                noise_file = self._noise_path[idx % len(self._noise_path)] # zapewnia cykliczność wyboru pliku z silence
+                waveform, _ = torchaudio.load(noise_file)
+
+            speaker = None # speaker zmieniony na none
 
         else:
             waveform, _, raw_label, speaker, _ = self.base_dataset[index]
@@ -344,13 +351,21 @@ class SpeechCommandsKWS(Dataset):
 
     # UTILS
     def _crop_or_pad(self, waveform: torch.Tensor) -> torch.Tensor:
+
         length = waveform.shape[1]
+
         if length < self._target_sample_length:
             return F.pad(waveform, (0, self._target_sample_length - length))
 
         if length > self._target_sample_length:
-            start = torch.randint(0, length - self._target_sample_length + 1, (1,)).item()
+
+            if not self.deterministic:
+                start = torch.randint(0, length - self._target_sample_length + 1, (1,)).item()
+            else:
+                start = (length - self._target_sample_length) // 2
+
             return waveform[:, start:start + self._target_sample_length]
+
         return waveform
 
     def number_of_speakers(self, include_silence: bool = False) -> int:
