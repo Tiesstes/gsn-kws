@@ -165,7 +165,7 @@ if __name__ == "__main__":
 
     test_dataset = SpeechCommandsKWS(dataset=base_data, split_indices=finetune_split["test"], allowed_speakers=finetune_split["allowed_speakers"], speaker_id_map=new_speaker_id_map,
                                      noise_dir=NOISE_PATH, silence_per_target=1.0, unknown_to_target_ratio=1.0,
-                                     seed=1234)
+                                     seed=1234, deterministic=True)
 
     test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=WORKERS)
 

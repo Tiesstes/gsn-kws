@@ -1,6 +1,8 @@
 import time
 import torch
 from pathlib import Path
+
+from torch.backends.cudnn import deterministic
 from torch.utils.data import DataLoader
 from torchaudio.datasets import SPEECHCOMMANDS
 from torchinfo import summary
@@ -71,7 +73,7 @@ def get_trainable_params(net_model):
 
 
 # jedna epoka, całość
-def run_epoch(net_model, data_loader, device, net_optimiser=None):
+def run_epoch(net_model, data_loader, device, criterion, net_optimiser=None):
     """Uruchomia jedną epokę (train lub val)."""
 
     if net_optimiser is not None:
@@ -82,7 +84,6 @@ def run_epoch(net_model, data_loader, device, net_optimiser=None):
         net_model.train(False)
         mode = torch.no_grad()
 
-    criterion = torch.nn.CrossEntropyLoss()
 
     total_loss = 0.0
     total_correct = 0
@@ -157,11 +158,11 @@ if __name__ == "__main__":
 
     val_dataset = SpeechCommandsKWS(dataset=base_data,split_indices=finetune_split["val"],allowed_speakers=finetune_split["allowed_speakers"],
             speaker_id_map=new_speaker_id_map,noise_dir=NOISE_PATH,silence_per_target=1.0,
-                                    unknown_to_target_ratio=1.0,seed=1234)
+                                    unknown_to_target_ratio=1.0,seed=1234, deterministic=True)
 
     test_dataset = SpeechCommandsKWS(dataset=base_data,split_indices=finetune_split["test"],allowed_speakers=finetune_split["allowed_speakers"],
         speaker_id_map=new_speaker_id_map,noise_dir=NOISE_PATH,silence_per_target=1.0,unknown_to_target_ratio=1.0,
-                                     seed=1234)
+                                     seed=1234, deterministic=True)
 
 
     # data loadery dla datasetów
@@ -180,7 +181,7 @@ if __name__ == "__main__":
     print(f"num_of_speakers: {num_of_speakers}")
 
     model = KWSNet(num_of_classes=num_of_classes, num_of_speakers=num_of_speakers).to(DEVICE)
-
+    criterion = torch.nn.CrossEntropyLoss()
 
     # weź to co wyuoczne w pretreningu
     print("Ładuję wagi modelu z pliku pretreningowego...")
@@ -226,8 +227,8 @@ if __name__ == "__main__":
     for epoch in range(1, EPOCHS + 1):
         epoch_start = time.perf_counter()
 
-        training_loss, training_accuracy = run_epoch(model, train_loader, DEVICE, net_optimiser=optimiser)
-        val_loss, val_accuracy = run_epoch(model, val_loader, DEVICE, net_optimiser=None)
+        training_loss, training_accuracy = run_epoch(model, train_loader, DEVICE, criterion, net_optimiser=optimiser)
+        val_loss, val_accuracy = run_epoch(model, val_loader, DEVICE, criterion, net_optimiser=None)
 
         scheduler.step()
 

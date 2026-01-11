@@ -8,8 +8,8 @@ from torchaudio.datasets import SPEECHCOMMANDS
 from torchinfo import summary
 
 
-from project.data.dataset import SplitBuilder
-from dataset import SpeechCommandsKWS
+from data.dataset import SplitBuilder
+from data.dataset import SpeechCommandsKWS
 from project.model.kws_net import KWSNet
 import warnings
 
@@ -39,7 +39,7 @@ print()
 
 
 # metoda dla epoki
-def run_epoch(net_model, data_loader, device, net_optimiser=None):
+def run_epoch(net_model, data_loader, device, criterion, net_optimiser=None):
 
     if net_optimiser is not None:
         net_model.train(True)
@@ -48,7 +48,7 @@ def run_epoch(net_model, data_loader, device, net_optimiser=None):
         net_model.train(False)
         mode = torch.no_grad()
 
-    criterion = torch.nn.CrossEntropyLoss() # TODO: wywalić na zewnątrz
+    #criterion = torch.nn.CrossEntropyLoss() # TODO: wywalić na zewnątrz
     total_loss = 0.0
     total_correct = 0
     total_n = 0
@@ -101,7 +101,7 @@ if __name__ == "__main__":
     val_dataset = SpeechCommandsKWS(dataset=base_data,
         split_indices=pretrain_split["val"], allowed_speakers=pretrain_split["allowed_speakers"],
         speaker_id_map=dataset_indexer.speaker_id_map, noise_dir=NOISE_PATH,
-        silence_per_target=1.0, unknown_to_target_ratio=1.0, seed=1234)
+        silence_per_target=1.0, unknown_to_target_ratio=1.0, seed=1234, deterministic=True)
 
     print(f"Liczność datasetu treningowego: {len(train_dataset)}")
     print(f"Liczność datasetu walidacyjnego:   {len(val_dataset)}")
@@ -116,6 +116,7 @@ if __name__ == "__main__":
     num_of_speakers = len(dataset_indexer.speaker_id_map) # mapa speaker id na inty
 
     model = KWSNet(num_of_classes=num_of_classes, num_of_speakers=num_of_speakers).to(DEVICE)
+    criterion = torch.nn.CrossEntropyLoss()
 
     # optymalizator i harmongramator (okresowa zmiana wartości learning_rate)
 
@@ -125,8 +126,7 @@ if __name__ == "__main__":
     optimiser = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
 
     scheduler = torch.optim.lr_scheduler.StepLR(
-        optimiser, step_size=SCHEDULER_STEP_SIZE, gamma=SCHEDULER_GAMMA
-    )
+        optimiser, step_size=SCHEDULER_STEP_SIZE, gamma=SCHEDULER_GAMMA)
 
     # do pętli treningowej
     best_val_acc = -1.0 # żeby mieć pewność, że na pewno wyłapiemy najlepsze accuracy
@@ -151,20 +151,18 @@ if __name__ == "__main__":
         epoch_start = time.perf_counter()
 
 
-        training_loss, training_accuracy = run_epoch(model, train_loader, DEVICE, net_optimiser=optimiser)
-        val_loss, val_accuracy = run_epoch(model, val_loader, DEVICE, net_optimiser=None)
+        training_loss, training_accuracy = run_epoch(model, train_loader, DEVICE, criterion, net_optimiser=optimiser)
+        val_loss, val_accuracy = run_epoch(model, val_loader, DEVICE, criterion, net_optimiser=None)
 
         scheduler.step() # po epoce (zmieni lr, jeśli epoka przeszła step size
 
         torch.cuda.synchronize()
         epoch_time = time.perf_counter() - epoch_start
 
-        print(
-            f"Epoch {epoch:02d}, "
+        print(f"Epoch {epoch:02d}, "
             f"train loss {training_loss:.4f} accuracy {training_accuracy:.4f}, "
             f"val loss {val_loss:.4f} accuracy {val_accuracy:.4f} "
-            f"time {epoch_time:.1f}s"
-        )
+            f"time {epoch_time:.1f}s")
 
         # zapisuj ten najlepszy checkpoint (najlepsze osiągi)
         if val_accuracy > best_val_acc:
@@ -178,8 +176,7 @@ if __name__ == "__main__":
                     "optimiser_state": optimiser.state_dict(),
                     "speaker_id_map": dataset_indexer.speaker_id_map,
                     "label_map": train_dataset.label_map,
-                    "val_accuracy": val_accuracy,},
-                CHECKPOINT_PATH,)
+                    "val_accuracy": val_accuracy,}, CHECKPOINT_PATH)
 
             print(f"Zapisany checkpoint (val_accuracy={val_accuracy:.4f})")
             print("")
