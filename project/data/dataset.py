@@ -117,21 +117,6 @@ class SplitBuilder:
                 self.speaker_stats[speaker][label].append(idx)
 
 
-    # ostatecznie funkcjonalność przeniesiona wyżej (do _divide_speakers) # TODO: wywali ć to
-    def _speaker_max_TARGET_count(self, speaker: str) -> int:
-        """
-        Metoda, która zwraca liczbę nagrań najliczniejszej klasy z TARGET dla podanego mówcy
-
-        :param speaker: mówca, dla którego chcemy wyznaczyć liczbę nagrań najliczniejszej znormalizowanej klasy
-        :return: liczba wypowiedzi w klasie, dla której dany mówca miał ich najmniej
-        """
-
-        # tu było rich jeśli chociaż jedna klasa >= 6
-        #return max(len(number_of_recordings) for number_of_recordings in self.speaker_stats[speaker].values())
-
-        # tu zwraca liczność klasy z najmniejszą liczbą nagrań (reszta więcej)
-        return min(len(number_of_recordings) for number_of_recordings in self.speaker_stats[speaker].values()) # żeby było MINIMUM 6 dla klasy
-
 
     # --------------------Podziały na zbiory pretreningowe i fine-tune---------
 
