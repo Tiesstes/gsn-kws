@@ -60,13 +60,13 @@ class SSN(nn.Module):
         gamma = self.gamma
         beta = self.beta
 
-        if frequency_range % s != 0:  # jeśli częstotliwość widma nie jest podzielne przez ilość podpasm to dupa
+        if frequency_range % s != 0:  # jeśli częstotliwość widma nie jest podzielne przez ilość podpasm to d*pa :D
 
             print(f"Częstotliwości F = {frequency_range} nie są podzielne przez "
                 f"wybraną, do SSN, liczbę podpasm = {s}!\n"
                 f"Zmieniam wartość {s}")
 
-            # dopóki ppasmo nie dzieli się na s (podpasma)
+            # dopóki pasmo nie dzieli się na s (podpasma)
             while s > 1 and (frequency_range % s != 0):
                 print(f"PRZED: s={s}, freq % s = {frequency_range % s}")
                 s -= 1
@@ -259,7 +259,7 @@ class BCResBlock(nn.Module):
         conv_1x1_f1 = nn.Conv2d(in_channels=depthwise_channels, out_channels=depthwise_channels, kernel_size=(1,1), bias=False)
         dropout_f1 = nn.Dropout2d(p=self.dropout_rate)
 
-        # IMPORTANT: PyTorch sam realizuje broadcast, jeśli wymiary na to pozwalają
+        # NOTE: PyTorch sam realizuje broadcast, jeśli wymiary na to pozwalają
 
         f1.append(td_conv)
         f1.append(bn_f1)
