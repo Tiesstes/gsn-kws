@@ -1,10 +1,9 @@
 import random
-from collections import Counter
 from pathlib import Path
+import matplotlib.pyplot as plt
 
 import torch
 import torchaudio
-from torch import tensor
 from torch.utils.data import Dataset
 from torchaudio import transforms as T
 from torch.nn import functional as F
@@ -19,230 +18,399 @@ AUXILIARY = [ "bed", "bird", "cat", "dog", "happy", "house", "marvin", "sheila",
     "backward", "forward", "follow", "learn", "visual"]
 
 
+class SplitBuilder:
+    """
+    # Klasa, która dzieli nagrania z base dataset'u: SPEECHCOMMANDS
+    # na zbiory:
+    # treningowy i walidacyjny - dla mówców o reprezentacji <6 - nagrań per klasa z TARGET
+    # treningowy, walidacyjny (1 próbka) i testowy (1 próbka) - dla mówców o reprezentacji >=6
+    # nagrań per klasa z TARGET
+
+    NOTE: klasa trzyma w sobie wszelkie niezbędne indeksy potrzebne do wyciągnięcia danych
+    """
+
+    def __init__(
+            self,
+            base_dataset,
+            fine_tune_min_samples_per_class: int = 6,
+            pretrain_val_ratio: float = 0.1,
+            seed: int = 1234):
+        """
+        :param base_dataset: dataset bazowy
+        :param fine_tune_min_samples_per_class: ile maksymalnie wypowiedzi na klasę może mieć mówca trafiający do datasetu pretreningu
+        :param pretrain_val_ratio: procent bazowego datasetu, który ma stanowić zbiór walidacyjny
+        :param seed: ziarno losowe
+        """
+        self.base_dataset = base_dataset
+
+        self.fine_tune_min_samples_per_class = fine_tune_min_samples_per_class # graniczna liczba nagrań dla pretreningu
+        self.pretrain_val_ratio = pretrain_val_ratio
+        self.seed = seed
+        self._rng = random.Random(seed)
+
+        # Słownik mówców, którego wartościami będą słowniki o parach:
+        # komenda - lista
+        # z indeksami nagrań dla tego mówcy dla danej klasy KW (TARGET)
+        self.speaker_stats = {}
+        self.all_speakers = set()
+        self._collect_KW_speaker_stats()
+
+        # od razu tworzony jest podział na grupy pretreningowe i finetuningowe (jednorazowe wywołanie funkcji zamiast kilka razy)
+        self._speaker_poor, self._speaker_rich  = self._divide_speakers()
+        # na tej podstawie tworzona jest też mapa przez prywatną klasę
+        self.speaker_id_map = self._build_global_speaker_id_map()
+
+    # zmienione na prywatną funkcję
+    def _divide_speakers(self) -> tuple[set[str], set[str]]:
+        """
+        Metoda, która tworzy zbiory mówców na tych, którzy:
+        - pójdą na pretrening (uboższa reprezentacja KW) (5- nagrań)
+        - pójdą na fine-tuning (bogatsza reprezentacja KW) (6+ nagrań)
+        """
+        speaker_rich = set()
+
+        # rich: tylko ci, którzy mają komplet TARGET i min_count >= K
+        for speaker in self.speaker_stats:
+            has_all_targets = all(lbl in self.speaker_stats[speaker] for lbl in TARGET_LABELS)
+            if not has_all_targets:
+                continue
+
+            min_target = min(len(self.speaker_stats[speaker][lbl]) for lbl in TARGET_LABELS)
+            if min_target >= self.fine_tune_min_samples_per_class:
+                speaker_rich.add(speaker)
+
+        # poor: wszyscy pozostali (w tym AUX-only)
+        speaker_poor = set(self.all_speakers) - speaker_rich
+        return speaker_poor, speaker_rich
+
+    def _build_global_speaker_id_map(self):
+
+        global_speaker_id_map = set(self.all_speakers)
+        global_speaker_id_map.update({"none", "unk"})  # dla silence
+        speaker_ids_map = {speaker: i for i, speaker in enumerate(sorted(global_speaker_id_map))}
+
+        return speaker_ids_map
+
+    def build_speaker_id_map_from_speakers(self, speakers: set[str]):
+        speakers = set(speakers)
+        speakers.update({"none", "unk"})
+        return {speaker: i for i, speaker in enumerate(sorted(speakers))}
+
+    def _collect_KW_speaker_stats(self):
+        """
+        Metoda do wyznaczenia słownika speaker stats
+
+        speaker_stats[raw_speaker_id][raw_label]
+        """
+        for idx in range(len(self.base_dataset)):
+            _, _, label, speaker, _ = self.base_dataset[idx]
+
+            self.all_speakers.add(speaker)
+
+            label = label.lower()
+
+            if label in TARGET_LABELS:
+                if speaker not in self.speaker_stats:
+                    self.speaker_stats[speaker] = {}
+                if label not in self.speaker_stats[speaker]:
+                    self.speaker_stats[speaker][label] = []
+                self.speaker_stats[speaker][label].append(idx)
+
+
+
+    # --------------------Podziały na zbiory pretreningowe i fine-tune---------
+
+    def build_pretrain_splits(self) -> dict:
+        """
+        Metoda, która na podstawie zbioru mówców o uboższej reprezentacji
+        dokonuje podziału na zbiory: treningowy i walidacyjny, ale także
+        przekazuje zbiór mówców o uboższej reprezentacji
+        (potem dla custom SpeechCommandsKWS) i statystyki
+
+        :return: "train": indeksy treningowe,
+                 "val": indeksy val,
+                 "allowed_speakers": set speakerów,
+                 "stats": dict mówca - liczba nagrań
+        """
+        audiofile_indices = []  # Lista z indeksami nagrań z klas TARGET mówców o uboższej reprezentacji
+
+        # Dla każdego mówcy,
+        for speaker in self._speaker_poor:
+
+            if speaker not in self.speaker_stats:
+                continue
+            # dla każdej listy z indeksami nagrań z poszczególnych klas TARGET
+            for idxs in self.speaker_stats[speaker].values():
+                # zbierz te indeksy razem do jednej listy
+                audiofile_indices.extend(idxs)
+
+        # Wymieszaj zebrane indeksy
+        self._rng.shuffle(audiofile_indices)
+        # Podziel na 90% trening, 10% walidacja, (tu jest truncation)
+        split = int((1.0 - self.pretrain_val_ratio) * len(audiofile_indices))
+
+        return {
+            "train": audiofile_indices[:split],
+            "val": audiofile_indices[split:],
+            "allowed_speakers": self._speaker_poor,
+            "stats": self._speaker_statistics(self._speaker_poor)
+        }
+
+    def build_finetune_splits(self) -> dict:
+        """
+        Metoda, która na podstawie zbioru mówców o bogatszej reprezentacji
+        dokonuje podziału na zbiory: testowy, walidacyjny i treningowy, ale także
+        przekazuje zbiór mówców o bogatszej reprezentacji
+        (potem dla custom SpeechCommandsKWS) i statystyki
+
+        :return: "train": indeksy treningowe,
+                "val": indeksy val,
+                "test": indeksy test,
+                "allowed_speakers": set speakerów,
+                "stats": dict mówca - liczba nagrań
+        """
+
+        train, val, test = [], [], []
+
+        # Dla każdego mówcy
+        for speaker in self._speaker_rich:
+            # Dla każdej pary klasa z TARGET - lista indeksów nagrań
+            for label, idxs in self.speaker_stats[speaker].items():
+
+                # Jeśli reprezentacja klasy dla danego mówcy jest mniejsza niż zdefiniowana, pomiń
+                if len(idxs) < self.fine_tune_min_samples_per_class:
+                    continue
+
+                # wymieszaj kolejność indeksów nagrań
+                self._rng.shuffle(idxs)
+                # dodaj 1 próbkę do zbioru walidacyjnego, 1 do restowego i resztę do treningowego
+                val.append(idxs[0])
+                test.append(idxs[1])
+                train.extend(idxs[2:])
+
+        return {
+            "train": train,
+            "val": val,
+            "test": test,
+            "allowed_speakers": self._speaker_rich,
+            "stats": self._speaker_statistics(self._speaker_rich)}
+
+    def _speaker_statistics(self, speakers) -> dict:
+        """
+        Metoda wyznaczająca słownik o parach:
+        mówca ze zbioru (uboższej lub bogatszej reprezentacji) - liczba jego nagrań z klas TARGET
+
+        :param speakers: zbiór mówców danej reprezentacji wyznaczany przez metodę divide_speakers
+        :return: statystyki mówców
+        """
+        stats = {}
+        for speaker in speakers:
+
+            speaker_dict = self.speaker_stats.get(speaker, {})  # WAŻNE
+            stats[speaker] = {lbl: len(speaker_dict.get(lbl, [])) for lbl in TARGET_LABELS}
+
+        return stats
+
+    @property
+    def speaker_poor(self):
+        return self._speaker_poor
+
+    @property
+    def speaker_rich(self):
+        return self._speaker_rich
+
+
+
 class SpeechCommandsKWS(Dataset):
 
-    def __init__(self, dataset,
-                 noise_dir,
-                 duration=1.0,
-                 sample_rate=16000,
-                 number_of_mel_bands=40,
-                 silence_per_target=1.0,  # 1.0 => silence ~= średnia liczność klasy target
-                 unknown_to_target_ratio=1.0,  # np. 2.0 => unknown <= 2x(średnia target)
-                 seed=1234):
+    def __init__(
+        self, dataset,
+        split_indices,   # dodane - lista indeksów nagrań z base dataset'u, definiująca split jaki chcemy zainstancjonować
+        allowed_speakers, # dodane - dozwolowny zbiór mówców (o bogatszej lub uboższej reprezentacji). Na jego podstawie wiadomo jakich próbek ze znormalizowanej klasy AUXILIARY nie brać
+        speaker_id_map,
+        noise_dir,
+        duration=1.0,
+        sample_rate=16000,
+        number_of_mel_bands: int = 40,
+        silence_per_target= 1.0,
+        unknown_to_target_ratio=1.0,
+        seed= 1234,
+    ):
         """
         Klasa dataset obsługująca GSC v.2 do projektu
 
         :param dataset: dataset na bazie którego zostanie zrobiony wrapper
-        :param label_mapping: mapowanie etykiet na liczbę
-        :param speaker_mapping: mapowanie id mówcy na liczbę
+        :param split_indices: lista indeksów nagrań z dataset'u, definiująca split jakiego chcemy dokonać (pretreningowego/postreningowego)
+        :param speaker_id_map: mapowanie id mówcy na liczbę
+        :param noise_dir: ścieżka do folderu gdzie znajdują się pliki z nagraniami klasy "silence"
         :param duration: pożądana długość dla jednego przykładu (bo potem końcowo: sampling rate * czas trwania sygnału)
         :param sample_rate: częstotliwość próbkowania sygnału
+        :param number_of_mel_bands: liczba pasm melowych
+        :param silence_per_target: mnożnik klasy "silence" względem średniej liczności klas targetowych
+        :param unknown_to_target_ratio: mnożnik klasy "unknown" względem średniej liczności klas targetowych
+        :param seed: ziarno generatora losowego
 
         :return: None
         """
         print("Tworzę dataset...")
-        # bo po tym głupim _backround_noise_ SPEECHCOMMANDS nie iteruje oczywiście :)
-        self.noise_path = Path(noise_dir)
+
+        self.base_dataset = dataset
+        self.indices = list(split_indices)
+        self.allowed_speakers = allowed_speakers
+        self._rng = random.Random(seed)
         # żeby ustandaryzować czas trwania
-        self.target_sample_length = int(duration * sample_rate)
+        self._target_sample_length = int(duration * sample_rate)
+        self._noise_path = list(Path(noise_dir).glob("*.wav"))
 
-        base_list = list(dataset) # bazowy dataset rzutowany na lisę
-
-        # liczenie tymczasowe - żeby potem poprwić liczność
-        tmp_counts = Counter()
-        for _, _, label, _, _ in base_list:
-
-            lbl = label.lower()
-
-            if lbl in TARGET_LABELS:
-                tmp_counts[lbl] += 1
-
-            elif lbl in AUXILIARY:
-                tmp_counts["unknown"] += 1
-
+        # COLLECT UNKNOWN (SAFE)
+        self.unknown_indices = []
+        for idx in range(len(self.base_dataset)):
+            _, _, label, speaker, _ = self.base_dataset[idx]
+            #if speaker not in allowed_speakers:
+                #continue
+            if label.lower() in AUXILIARY and speaker in allowed_speakers:
+                self.unknown_indices.append(idx)
             else:
-                tmp_counts["silence"] += 1
+                continue
 
-        target_counts = [tmp_counts[label] for label in TARGET_LABELS]
+        # BALANCE UNKNOWN CLASS
+        target_count = len(self.indices)
+        max_unknown = int(unknown_to_target_ratio * (target_count / 10))
+        self._rng.shuffle(self.unknown_indices)
+        self.unknown_indices = self.unknown_indices[:max_unknown]
 
-        avg_target_counts = int(sum(target_counts) / max(1, len(target_counts)))
+        #SILENCE
+        self.silence_count = int(silence_per_target * (target_count / 10))
 
-        # silence tyle ile wspł * średnia liczność target
-        target_silence_counts = int(silence_per_target * avg_target_counts)
+        # FINAL INDEX TABLE
+        self.final_indices = (
+            [("target", i) for i in self.indices]
+            + [("unknown", i) for i in self.unknown_indices]
+            + [("silence", None) for _ in range(self.silence_count)]
+        )
 
-        print("Policzyłem wartości tmp, przechodzę do noise_list")
+        #LABEL & SPEAKER MAP
+        labels = TARGET_LABELS + ["unknown", "silence"]
+        self.label_map = {lbl: i for i, lbl in enumerate(labels)}
 
+        self.speaker_id_map = speaker_id_map
 
-        noise_list = []
-        #trzeba było zmienić generację plików do silence, bo było ich tylko 6 XD
-        files = list(self.noise_path.glob("*.wav"))
-        counts_per_file = max(1, target_silence_counts // len(files)) # TODO: co jak nie ma plików
+        # FEATURES
+        self.to_melspec = T.MelSpectrogram(
+            sample_rate=sample_rate,
+            n_fft=512,
+            win_length=480,
+            hop_length=160,
+            n_mels=number_of_mel_bands,
+        )
+        self.to_db = T.AmplitudeToDB(stype="power")
 
-        # teraz wygeneruj tyle ile targetów (około)
-        for audio_file in files:
-            waveform, sample_rate = torchaudio.load(audio_file)  # [1, 16kHz]
-            file_length = waveform.shape[1]
-
-            for _ in range(counts_per_file):
-
-                if file_length <= self.target_sample_length:
-                    start = 0
-
-                else:
-                    start = torch.randint(0, file_length - self.target_sample_length + 1,(1,)).item() # losuję gdzie zacząć w pliku
-                    
-                audio_chunk = waveform[:, start:start + self.target_sample_length]
-                noise_list.append((audio_chunk, sample_rate, "noise", "none", audio_file)) # na końcu źródło, ale nie jest tutaj istotne
-
-        # random generator, żeby wybierał pliki losowo
-        rng = random.Random(seed)
-
-        print("Skończyłem generować noise, sprawdzam czy nie ma za mało")
-
-        # dopóki nie mamy tyle ise ile chcemy mieć - w sumie można to pominąć to już mniej wpływa
-        while len(noise_list) < target_silence_counts:
-
-            audio_file = rng.choice(files)
-            waveform, sample_rate = torchaudio.load(audio_file)
-            file_length = waveform.shape[1]
-
-            if file_length <= self.target_sample_length:
-                start = 0
-            else:
-                start = rng.randrange(0, file_length - self.target_sample_length + 1)
-
-            audio_chunk = waveform[:, start:(start + self.target_sample_length)]
-            noise_list.append((audio_chunk, sample_rate, "noise", "none", audio_file))
-
-
-        print("Ograniczam klasę unknown")
-
-        # teraz ograniczyć unknown!
-        max_unknown_counts = int(unknown_to_target_ratio * avg_target_counts)
-
-        unknown_indices = []
-        to_keep_indices = [] # indeksy rtykiet z datasetu których nie będziemy ruszać
-
-        for index, item in enumerate(base_list):
-            _, _, label, _, _ = item
-
-            lbl = label.lower()
-
-            if lbl in AUXILIARY:
-                unknown_indices.append(index)
-
-            else:
-                to_keep_indices.append(index)
-
-        if len(unknown_indices) > max_unknown_counts:
-
-            rng.shuffle(unknown_indices)
-            unknown_indices = unknown_indices[:max_unknown_counts]
-
-        balanced = to_keep_indices + unknown_indices
-        balanced.sort() # to jest tylko dla stabilności indeksowania (żeby było stałe)
-
-        balanced_base = [base_list[index] for index in balanced]
-
-        print("Wszystko wydaje się być okej, będę teraz liczył prawdziwą liczność")
-
-        # no i w końcu można dataset zrobić normalnie
-        # agregujemy sobie te dane -> (waveform, sample rate, etykieta, speaker, path)
-        self.balanced_data = balanced_base + noise_list
-
-        # będą nam zliczać ile czego jest do kontroli
-        self.label_counter = Counter()
-        self.speaker_counter = Counter()
-
-        for _, _, label, speaker, _ in self.balanced_data:
-
-            label = label.lower()  # upewnij się, że są z małej litery
-
-            if label in TARGET_LABELS:
-                mapped_label = label
-
-            elif label in AUXILIARY:
-                mapped_label = "unknown"
-            else:
-                mapped_label = "silence" # dorobić sygnały do silence
-
-            self.label_counter[mapped_label] += 1
-            self.speaker_counter[speaker] += 1
-
-        # smarter podejście bez list i setów
-        all_labels = sorted(self.label_counter.keys()) # tutaj już lecą zmapowane wartości - keys
-        all_speakers = sorted(self.speaker_counter.keys())
-
-        # robimy mapy: string -> int; dla sieci
-        self.label_mapping = {}
-        for index, lbl in enumerate(all_labels):
-            self.label_mapping[lbl] = index
-
-        self.speaker_mapping = {}
-        for index, s_id in enumerate(all_speakers):
-            self.speaker_mapping[s_id] = index
-
-
-        # transformacja, której będą poddane dane do wsadu dla sieci -> win_length = 30ms * 16kHz; hop_length = 10ms * 16kHz
-        self.to_melspec = T.MelSpectrogram(sample_rate, n_fft=512, win_length=480,
-                                                     hop_length=160, n_mels=number_of_mel_bands)
-        # transformacja z liniowej na moc
-        self.to_db = T.AmplitudeToDB(stype='power')
-
-        print("[Dystrybucja etykiet w datasecie]")
-        for lbl, cnt in self.label_counter.items():
-            print(f"{lbl:8s} -> {cnt:6d} próbek, id={self.label_mapping[lbl]}")
-
+        print("Dataset istnieje!")
 
     def __len__(self):
-        return len(self.balanced_data)
+        return len(self.final_indices)
 
-    def __getitem__(self, index):
-
-        """
-        :return:
-            "log_mel_spectrogram": torch.Tensor
-            "speaker_id": torch.Tensor int64
-            "label": torch.Tensor int64
-            "mel_spectrogram": mel_spectrogram: torch.Tensor
-        """
-
-        waveform, sample_rate, label, speaker_id, _ = self.balanced_data[index]
-
-        label = label.lower() # upewnij się, że małe litery
-
-        # zamień na etykietę o znormalizowanej nazwie
-        if label in TARGET_LABELS:
-            mapped_label = label
-        elif label in AUXILIARY:
-            mapped_label = "unknown"
-        else: # ta klasa "noise" zamieni się na "silence" jak w artykułach
-            mapped_label = "silence"
-
-        # .clone() kopiuje dane oryginalnego tensor'a, a zostawia ten z datasetu w spokoju
-        waveform = waveform.clone() # bierzemy teraz całe nagranie i zaraz będziemy się nim bawić w if'ach
-        waveform_length = waveform.shape[1]
-
-        # jak nagranie krótsze to padding zerami
-        if waveform_length < self.target_sample_length:
-            to_pad = self.target_sample_length - waveform.shape[1] # różnica między chcianą długością a realną długością danych
-            waveform = F.pad(waveform, (0, to_pad))
-
-        # każde wywołanie __getitem__ to i tak inny kawałek nagrania z noise - automatyczny "shuffle"
-        elif waveform_length > self.target_sample_length:
-
-            # losowanie jednego elementu torchem i zamiana na int
-            start = torch.randint(0, waveform_length - self.target_sample_length + 1,(1,)).item()  # ten +1 to żeby indeks był maks
-            waveform = waveform[:, start:start + self.target_sample_length]
-
-        # mel spektrogram i jeszcze do skali log
-        mel_spectrogram = self.to_melspec(waveform)
-        log_mel_spectrogram = self.to_db(mel_spectrogram)
+    def __getitem__(self, idx):
 
 
+        # słabo tylko, że silence jest niedeterministyczny dla nas
+        label, index = self.final_indices[idx]
+
+        if label == "silence": # tworzy plik próbki losowo
+            noise_file = self._rng.choice(self._noise_path)
+            waveform, _ = torchaudio.load(noise_file)
+            speaker = "none"
+
+        else:
+            waveform, _, raw_label, speaker, _ = self.base_dataset[index]
+            waveform = waveform.clone()
+
+            if raw_label.lower() in TARGET_LABELS:
+                label = raw_label.lower()
+            else:
+                label = "unknown"
+
+
+        waveform = self._crop_or_pad(waveform)
+        mel = self.to_melspec(waveform)
+        log_mel = self.to_db(mel)
+
+        speaker_id = self.speaker_id_map.get(speaker, self.speaker_id_map["unk"])
         return {
-            "log_mel_spectrogram": log_mel_spectrogram,
-            "speaker_id": tensor(self.speaker_mapping[speaker_id], dtype=torch.long), # casting (rzutowanie) przypisywanej wartości na tensor (int64)
-            "label": tensor(self.label_mapping[mapped_label], dtype=torch.long), # casting na tensor
-            "mel_spectrogram": mel_spectrogram
+            "log_mel_spectrogram": log_mel,
+            "label": torch.tensor(self.label_map[label], dtype=torch.long),
+            "speaker_id": torch.tensor(speaker_id, dtype=torch.long)
         }
+
+    # UTILS
+    def _crop_or_pad(self, waveform: torch.Tensor) -> torch.Tensor:
+        length = waveform.shape[1]
+        if length < self._target_sample_length:
+            return F.pad(waveform, (0, self._target_sample_length - length))
+
+        if length > self._target_sample_length:
+            start = torch.randint(0, length - self._target_sample_length + 1, (1,)).item()
+            return waveform[:, start:start + self._target_sample_length]
+        return waveform
+
+    def number_of_speakers(self, include_silence: bool = False) -> int:
+
+        speakers = set()
+
+        for label_type, index in self.final_indices:
+            if (not include_silence) and label_type == "silence":
+                continue
+            if label_type == "silence":
+                speakers.add("none")
+            else:
+                _, _, _, speaker, _ = self.base_dataset[index]
+                speakers.add(speaker)
+        return len(speakers)
+
+    def visualise_logmel_per_class(self, n_cols: int = 4, figsize=(14, 10)):
+
+
+        id_to_name = {value: key for key, value in self.label_map.items()} # ids do nazw etykiet
+        label_names = list(self.label_map.keys())  # TARGET + unknown + silence
+
+        # wylosuj 1 przykłąd na każdą klasę
+        example_per_class = {}  # label_name -> (idx, logmel_2d)
+
+        for i in range(len(self)):
+            sample = self[i]
+            label_id = int(sample["label"].item())
+            label_name = id_to_name[label_id]
+
+            if label_name not in example_per_class:
+                logmel_spectrogram = sample["log_mel_spectrogram"]  # to jest tensor [1, n_mels, T]
+                np_logmel_spectrogram = logmel_spectrogram.squeeze(0).detach().cpu().numpy()  # [n_mels, T]
+                example_per_class[label_name] = (i, np_logmel_spectrogram)
+
+            if len(example_per_class) == len(label_names):
+                break
+
+        # siatka
+        n = len(label_names)
+        n_rows = (n + n_cols - 1) // n_cols
+
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize)
+        axes = axes.flatten()
+
+        for ax_i, label_name in enumerate(label_names):
+            ax = axes[ax_i]
+            if label_name not in example_per_class:
+                ax.set_title(f"{label_name} (brak)")
+                ax.axis("off")
+                continue
+
+            idx, np_logmel_spectrogram = example_per_class[label_name]
+            ax.imshow(np_logmel_spectrogram, origin="lower", aspect="auto")
+            ax.set_title(f"{label_name} (idx={idx})")
+            ax.set_xlabel("Time")
+            ax.set_ylabel("Mels")
+
+        for j in range(n, len(axes)):
+            axes[j].axis("off")
+
+        plt.tight_layout()
+        plt.show()

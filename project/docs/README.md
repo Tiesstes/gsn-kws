@@ -31,8 +31,8 @@ czysty *x* do końcowego argumentu dla aktywacji - jak w przypadku bloku *normal
 
 - **`TARGET_LABELS`** – keywords, które model ma nauczyć się rozpoznawać (np. `yes`, `no`, `up`, `down`, …)
 - **`AUXILIARY`** – dodatkowe słowa traktowane jako kategorię „unknown" (np. `cat`, `dog`, `happy`, …)
-- **`IndexBuilder`** – klasa do budowy podziałów na zbiory (train/val/test) oraz dostarczania statystyk
-- **`SpeechCommandsKWS`** – klasa dziedzicząca po `Dataset` PyTorch, która konwertuje audio na mel-spektrogramy i balansuje klas
+- **`SplitBuilder`** – klasa do budowy podziałów na zbiory (train/val/test) oraz trzymająca 
+- **`SpeechCommandsKWS`** – klasa dziedzicząca po `Dataset` PyTorch, która konwertuje audio na mel-spektrogramy i balansuje klasy
 
 ## Bloki sieci BC-Res-Net-1 `blocks.py`
 

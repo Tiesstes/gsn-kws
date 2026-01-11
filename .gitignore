@@ -2,4 +2,7 @@
 /project/data/SpeechCommands/
 /.venv/
 /.idea/
+/project/model/KWSNet_weights.pt
+/project/data/preprocess.py
+/project/data/debug.py
 speech_commands_v0.02.tar.gz
