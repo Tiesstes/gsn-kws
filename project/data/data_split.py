@@ -81,10 +81,8 @@ def prepare_splits_manifest(*, data_manifest_path: Path, gsc_dataset_path: Path,
     base_data = SPEECHCOMMANDS(root=str(gsc_dataset_path), subset=None, download=True)
 
     # SplitBuilder liczy statystyki mówców i dzieli ich na speaker_poor/speaker_rich; zamiast za każdym razem w skrypcie
-    split_builder = SplitBuilder(base_dataset=base_data,
-        fine_tune_min_samples_per_class=finetune_min_samples_per_class,
-        pretrain_val_ratio=pretrain_val_ratio,
-        seed=seed)
+    split_builder = SplitBuilder(base_dataset=base_data,fine_tune_min_samples_per_class=finetune_min_samples_per_class,
+                                 pretrain_val_ratio=pretrain_val_ratio,seed=seed)
 
     # tu splity jak dotychczas w pretrain/py, finetune.py etc
     pretrain_split = split_builder.build_pretrain_splits()
@@ -203,7 +201,8 @@ def build_phase_datasets(*, manifest: Dict[str, Any], phase: Literal["pretrain",
         number_of_mel_bands=config["number_of_mel_bands"],
         silence_per_target=config["silence_per_target"],
         unknown_to_target_ratio=config["unknown_to_target_ratio"],
-        seed=config["seed"])
+        seed=config["seed"],
+        label_map=maps["label_map"])
 
     # niedeterministyczny (więc losowy crop / losowy "silence")
     train_dataset = SpeechCommandsKWS(split_indices=phase_splits["train_indices"], deterministic=False, **common_kwargs)
