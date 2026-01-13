@@ -8,6 +8,8 @@ from torch.utils.data import Dataset
 from torchaudio import transforms as T
 from torch.nn import functional as F
 
+# TODO: dostosować dataset żeby mógł korzystać z data_split.py
+
 # core words z README.MD do SC z PyTorch jest inne, ale robimy zgodnie z benchmarkiem 12 klas jak Qualcomm
 TARGET_LABELS = [ "yes", "no", "up", "down", "left", "right", "on", "off", "stop", "go"]
 
@@ -29,8 +31,7 @@ class SplitBuilder:
     NOTE: klasa trzyma w sobie wszelkie niezbędne indeksy potrzebne do wyciągnięcia danych
     """
 
-    def __init__(self,
-            base_dataset,
+    def __init__(self, base_dataset,
             fine_tune_min_samples_per_class: int = 6,
             pretrain_val_ratio: float = 0.1,
             seed: int = 1234):
@@ -44,7 +45,7 @@ class SplitBuilder:
 
         self.base_dataset = base_dataset
 
-        self.fine_tune_min_samples_per_class = fine_tune_min_samples_per_class # graniczna liczba nagrań dla pretreningu
+        self.finetune_min_samples_per_class = fine_tune_min_samples_per_class # graniczna liczba nagrań dla pretreningu
         self.pretrain_val_ratio = pretrain_val_ratio
         self.seed = seed
         self._rng = random.Random(seed)
@@ -77,7 +78,7 @@ class SplitBuilder:
                 continue
 
             min_target = min(len(self.speaker_stats[speaker][lbl]) for lbl in TARGET_LABELS)
-            if min_target >= self.fine_tune_min_samples_per_class:
+            if min_target >= self.finetune_min_samples_per_class:
                 speaker_rich.add(speaker)
 
         # poor: wszyscy pozostali (w tym AUX-only)
@@ -92,6 +93,7 @@ class SplitBuilder:
 
         return speaker_ids_map
 
+    # na razie niepotrzebna
     def build_speaker_id_map_from_speakers(self, speakers: set[str]):
         speakers = set(speakers)
         speakers.update({"none", "unk"})
@@ -119,7 +121,7 @@ class SplitBuilder:
 
 
 
-    # --------------------Podziały na zbiory pretreningowe i fine-tune---------
+    # podziały na zbiory pretreningowe i fine-tune
 
     def build_pretrain_splits(self) -> dict:
         """
@@ -179,12 +181,12 @@ class SplitBuilder:
             for label, idxs in self.speaker_stats[speaker].items():
 
                 # Jeśli reprezentacja klasy dla danego mówcy jest mniejsza niż zdefiniowana, pomiń
-                if len(idxs) < self.fine_tune_min_samples_per_class:
+                if len(idxs) < self.finetune_min_samples_per_class:
                     continue
 
                 # wymieszaj kolejność indeksów nagrań
                 self._rng.shuffle(idxs)
-                # dodaj 1 próbkę do zbioru walidacyjnego, 1 do restowego i resztę do treningowego
+                # dodaj 1 próbkę do zbioru walidacyjnego, 1 do testowego i resztę do treningowego
                 val.append(idxs[0])
                 test.append(idxs[1])
                 train.extend(idxs[2:])
@@ -233,8 +235,8 @@ class SpeechCommandsKWS(Dataset):
         duration=1.0,
         sample_rate=16000,
         number_of_mel_bands: int = 40,
-        silence_per_target= 1.0,
-        unknown_to_target_ratio=1.0,
+        silence_per_target: float= 1.0,
+        unknown_to_target_ratio: float =1.0,
         seed= 1234,
         deterministic: bool = False # przez to będą wybierane pliki losowo lub deterministycznie (zmienione __getitem__ i _crop_or_pad)
      ):
