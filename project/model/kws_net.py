@@ -40,14 +40,14 @@ class KWSNet(nn.Module):
                                         # z wartości -inf do +inf i ona prawdę nam powie
         return logits
 
-    def ensure_num_of_speakers(model, num_speakers: int):
+    def ensure_num_of_speakers(self, num_speakers: int):
         """ Zwiększaj rozmiar mebedding'u """
 
-        old_embedding: nn.Embedding = model.speaker_embedding
+        old_embedding: nn.Embedding = self.speaker_embedding
         old_n, embedding_dimension = old_embedding.weight.shape
 
         if num_speakers <= old_n:
-            return model
+            return self
 
         new_embedding = nn.Embedding(num_speakers, embedding_dimension).to(old_embedding.weight.device)
 
@@ -60,6 +60,16 @@ class KWSNet(nn.Module):
             new_embedding.weight[old_n:].copy_(user_mean.repeat(num_speakers - old_n, 1))
 
 
-        model.speaker_embedding = new_embedding
-        return model
+        self.speaker_embedding = new_embedding
+        return self
+
+
+    def freeze_backbone(self):
+        for parametr in self.backbone.parameters():
+            parametr.requires_grad = False
+        print("Backbone is now frozen")
+
+
+    def get_trainable_parameters(self):
+        return [parameter for parameter in self.parameters() if parameter.requires_grad == True]
 
