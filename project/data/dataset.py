@@ -1,5 +1,7 @@
 import random
 from pathlib import Path
+from typing import Optional, Dict
+
 import matplotlib.pyplot as plt
 
 import torch
@@ -20,226 +22,13 @@ AUXILIARY = [ "bed", "bird", "cat", "dog", "happy", "house", "marvin", "sheila",
     "backward", "forward", "follow", "learn", "visual"]
 
 
-class SplitBuilder:
-    """
-    # Klasa, która dzieli nagrania z base dataset'u: SPEECHCOMMANDS
-    # na zbiory:
-    # treningowy i walidacyjny - dla mówców o reprezentacji <6 - nagrań per klasa z TARGET
-    # treningowy, walidacyjny (1 próbka) i testowy (1 próbka) - dla mówców o reprezentacji >=6
-    # nagrań per klasa z TARGET
-
-    NOTE: klasa trzyma w sobie wszelkie niezbędne indeksy potrzebne do wyciągnięcia danych
-    """
-
-    def __init__(self, base_dataset,
-            fine_tune_min_samples_per_class: int = 6,
-            pretrain_val_ratio: float = 0.1,
-            seed: int = 1234):
-
-        """
-        :param base_dataset: dataset bazowy
-        :param fine_tune_min_samples_per_class: ile maksymalnie wypowiedzi na klasę może mieć mówca trafiający do datasetu pretreningu
-        :param pretrain_val_ratio: procent bazowego datasetu, który ma stanowić zbiór walidacyjny
-        :param seed: ziarno losowe
-        """
-
-        self.base_dataset = base_dataset
-
-        self.finetune_min_samples_per_class = fine_tune_min_samples_per_class # graniczna liczba nagrań dla pretreningu
-        self.pretrain_val_ratio = pretrain_val_ratio
-        self.seed = seed
-        self._rng = random.Random(seed)
-
-        # Słownik mówców, którego wartościami będą słowniki o parach:
-        # komenda - lista
-        # z indeksami nagrań dla tego mówcy dla danej klasy KW (TARGET)
-        self.speaker_stats = {}
-        self.all_speakers = set()
-        self._collect_KW_speaker_stats()
-
-        # od razu tworzony jest podział na grupy pretreningowe i finetuningowe (jednorazowe wywołanie funkcji zamiast kilka razy)
-        self._speaker_poor, self._speaker_rich  = self._divide_speakers()
-        # na tej podstawie tworzona jest też mapa przez prywatną klasę
-        self.speaker_id_map = self._build_global_speaker_id_map()
-
-    # zmienione na prywatną funkcję
-    def _divide_speakers(self) -> tuple[set[str], set[str]]:
-        """
-        Metoda, która tworzy zbiory mówców na tych, którzy:
-        - pójdą na pretrening (uboższa reprezentacja KW) (5- nagrań)
-        - pójdą na fine-tuning (bogatsza reprezentacja KW) (6+ nagrań)
-        """
-        speaker_rich = set()
-
-        # rich: tylko ci, którzy mają komplet TARGET i min_count >= K
-        for speaker in self.speaker_stats:
-            has_all_targets = all(lbl in self.speaker_stats[speaker] for lbl in TARGET_LABELS)
-            if not has_all_targets:
-                continue
-
-            min_target = min(len(self.speaker_stats[speaker][lbl]) for lbl in TARGET_LABELS)
-            if min_target >= self.finetune_min_samples_per_class:
-                speaker_rich.add(speaker)
-
-        # poor: wszyscy pozostali (w tym AUX-only)
-        speaker_poor = set(self.all_speakers) - speaker_rich
-        return speaker_poor, speaker_rich
-
-    def _build_global_speaker_id_map(self):
-
-        global_speaker_id_map = set(self.all_speakers)
-        global_speaker_id_map.update({"none", "unk"})  # dla silence
-        speaker_ids_map = {speaker: i for i, speaker in enumerate(sorted(global_speaker_id_map))}
-
-        return speaker_ids_map
-
-    # na razie niepotrzebna
-    def build_speaker_id_map_from_speakers(self, speakers: set[str]):
-        speakers = set(speakers)
-        speakers.update({"none", "unk"})
-        return {speaker: i for i, speaker in enumerate(sorted(speakers))}
-
-    def _collect_KW_speaker_stats(self):
-        """
-        Metoda do wyznaczenia słownika speaker stats
-
-        speaker_stats[raw_speaker_id][raw_label]
-        """
-        for idx in range(len(self.base_dataset)):
-            _, _, label, speaker, _ = self.base_dataset[idx]
-
-            self.all_speakers.add(speaker)
-
-            label = label.lower()
-
-            if label in TARGET_LABELS:
-                if speaker not in self.speaker_stats:
-                    self.speaker_stats[speaker] = {}
-                if label not in self.speaker_stats[speaker]:
-                    self.speaker_stats[speaker][label] = []
-                self.speaker_stats[speaker][label].append(idx)
-
-
-
-    # podziały na zbiory pretreningowe i fine-tune
-
-    def build_pretrain_splits(self) -> dict:
-        """
-        Metoda, która na podstawie zbioru mówców o uboższej reprezentacji
-        dokonuje podziału na zbiory: treningowy i walidacyjny, ale także
-        przekazuje zbiór mówców o uboższej reprezentacji
-        (potem dla custom SpeechCommandsKWS) i statystyki
-
-        :return: "train": indeksy treningowe,
-                 "val": indeksy val,
-                 "allowed_speakers": set speakerów,
-                 "stats": dict mówca - liczba nagrań
-        """
-        audiofile_indices = []  # Lista z indeksami nagrań z klas TARGET mówców o uboższej reprezentacji
-
-        # Dla każdego mówcy,
-        for speaker in self._speaker_poor:
-
-            if speaker not in self.speaker_stats:
-                continue
-            # dla każdej listy z indeksami nagrań z poszczególnych klas TARGET
-            for idxs in self.speaker_stats[speaker].values():
-                # zbierz te indeksy razem do jednej listy
-                audiofile_indices.extend(idxs)
-
-        # Wymieszaj zebrane indeksy
-        self._rng.shuffle(audiofile_indices)
-        # Podziel na 90% trening, 10% walidacja, (tu jest truncation)
-        split = int((1.0 - self.pretrain_val_ratio) * len(audiofile_indices))
-
-        return {
-            "train": audiofile_indices[:split],
-            "val": audiofile_indices[split:],
-            "allowed_speakers": self._speaker_poor,
-            "stats": self._speaker_statistics(self._speaker_poor)
-        }
-
-    def build_finetune_splits(self) -> dict:
-        """
-        Metoda, która na podstawie zbioru mówców o bogatszej reprezentacji
-        dokonuje podziału na zbiory: testowy, walidacyjny i treningowy, ale także
-        przekazuje zbiór mówców o bogatszej reprezentacji
-        (potem dla custom SpeechCommandsKWS) i statystyki
-
-        :return: "train": indeksy treningowe,
-                "val": indeksy val,
-                "test": indeksy test,
-                "allowed_speakers": set speakerów,
-                "stats": dict mówca - liczba nagrań
-        """
-
-        train, val, test = [], [], []
-
-        # Dla każdego mówcy
-        for speaker in self._speaker_rich:
-            # Dla każdej pary klasa z TARGET - lista indeksów nagrań
-            for label, idxs in self.speaker_stats[speaker].items():
-
-                # Jeśli reprezentacja klasy dla danego mówcy jest mniejsza niż zdefiniowana, pomiń
-                if len(idxs) < self.finetune_min_samples_per_class:
-                    continue
-
-                # wymieszaj kolejność indeksów nagrań
-                self._rng.shuffle(idxs)
-                # dodaj 1 próbkę do zbioru walidacyjnego, 1 do testowego i resztę do treningowego
-                val.append(idxs[0])
-                test.append(idxs[1])
-                train.extend(idxs[2:])
-
-        return {
-            "train": train,
-            "val": val,
-            "test": test,
-            "allowed_speakers": self._speaker_rich,
-            "stats": self._speaker_statistics(self._speaker_rich)}
-
-    def _speaker_statistics(self, speakers) -> dict:
-        """
-        Metoda wyznaczająca słownik o parach:
-        mówca ze zbioru (uboższej lub bogatszej reprezentacji) - liczba jego nagrań z klas TARGET
-
-        :param speakers: zbiór mówców danej reprezentacji wyznaczany przez metodę divide_speakers
-        :return: statystyki mówców
-        """
-        stats = {}
-        for speaker in speakers:
-
-            speaker_dict = self.speaker_stats.get(speaker, {})  # WAŻNE
-            stats[speaker] = {lbl: len(speaker_dict.get(lbl, [])) for lbl in TARGET_LABELS}
-
-        return stats
-
-    @property
-    def speaker_poor(self):
-        return self._speaker_poor
-
-    @property
-    def speaker_rich(self):
-        return self._speaker_rich
-
-
-
 class SpeechCommandsKWS(Dataset):
 
-    def __init__(
-        self, dataset,
-        split_indices,   # dodane - lista indeksów nagrań z base dataset'u, definiująca split jaki chcemy zainstancjonować
-        allowed_speakers, # dodane - dozwolowny zbiór mówców (o bogatszej lub uboższej reprezentacji). Na jego podstawie wiadomo jakich próbek ze znormalizowanej klasy AUXILIARY nie brać
-        speaker_id_map,
-        noise_dir,
-        duration=1.0,
-        sample_rate=16000,
-        number_of_mel_bands: int = 40,
-        silence_per_target: float= 1.0,
-        unknown_to_target_ratio: float =1.0,
-        seed= 1234,
-        deterministic: bool = False # przez to będą wybierane pliki losowo lub deterministycznie (zmienione __getitem__ i _crop_or_pad)
-     ):
+    def __init__(self, dataset,split_indices,   # dodane - lista indeksów nagrań z base dataset'u, definiująca split jaki chcemy zainstancjonować
+                 allowed_speakers, # dodane - dozwolowny zbiór mówców (o bogatszej lub uboższej reprezentacji). Na jego podstawie wiadomo jakich próbek ze znormalizowanej klasy AUXILIARY nie brać
+                 speaker_id_map, label_map: Optional[Dict[str, int]], noise_dir, duration=1.0, sample_rate=16000,
+                 number_of_mel_bands: int = 40, silence_per_target: float= 1.0, unknown_to_target_ratio: float =1.0,
+                 seed= 1234, deterministic: bool = False): # przez to będą wybierane pliki losowo lub deterministycznie (zmienione __getitem__ i _crop_or_pad)
         """
         Klasa dataset obsługująca GSC v.2 do projektu
 
@@ -268,6 +57,8 @@ class SpeechCommandsKWS(Dataset):
         self._noise_path = sorted(Path(noise_dir).glob("*.wav")) # posortuj
         self.deterministic = deterministic
 
+        # indeksy i tak powstają dynamicznie, bo to niezależne. SplitBUilder pilnuje indeksów podziałowych
+
         # COLLECT UNKNOWN (SAFE)
         self.unknown_indices = []
         for idx in range(len(self.base_dataset)):
@@ -292,12 +83,35 @@ class SpeechCommandsKWS(Dataset):
         self.final_indices = (
             [("target", i) for i in self.indices]
             + [("unknown", i) for i in self.unknown_indices]
-            + [("silence", None) for _ in range(self.silence_count)]
-        )
+            + [("silence", None) for _ in range(self.silence_count)])
 
-        #LABEL & SPEAKER MAP
-        labels = TARGET_LABELS + ["unknown", "silence"]
-        self.label_map = {lbl: i for i, lbl in enumerate(labels)}
+        #LABEL & SPEAKER MAP -> zamiana, żeby nie liczył indeksów zawsze, tylko mógł brać z pliku
+        default_labels = TARGET_LABELS + ["unknown", "silence"]
+        default_label_map = {label: index  for index, label in enumerate(default_labels)}
+
+        if label_map is None:
+            self.label_map = default_label_map
+
+        else:
+            required_labels = set(default_label_map.keys())
+            provided_labels = set(label_map.keys())
+
+            # najpierw klucze sprawdzić
+            if provided_labels != required_labels:
+
+                missing_labels = required_labels - provided_labels
+                extra_labels = provided_labels - required_labels
+
+                raise ValueError(f"label_map niezgodny; brakuje={sorted(missing_labels)}, nadmiarowe={sorted(extra_labels)}")
+
+            # a teraz to w ogóle wartości
+            for label_name, expected_idx in default_label_map.items():
+                provided_idx = label_map[label_name]
+
+                if provided_idx != expected_idx:
+                    raise ValueError(f"label_map['{label_name}'] = {provided_idx}, ale powinno być {expected_idx}")
+
+            self.label_map = label_map
 
         self.speaker_id_map = speaker_id_map
 
@@ -307,8 +121,8 @@ class SpeechCommandsKWS(Dataset):
             n_fft=512,
             win_length=480,
             hop_length=160,
-            n_mels=number_of_mel_bands,
-        )
+            n_mels=number_of_mel_bands)
+
         self.to_db = T.AmplitudeToDB(stype="power")
 
         print("Dataset istnieje!")
@@ -318,10 +132,11 @@ class SpeechCommandsKWS(Dataset):
 
     def __getitem__(self, idx):
 
-        # słabo tylko, że silence jest niedeterministyczny dla nas
+        # już silence deterministyczny zależnie od wybboru datasetu
         label, index = self.final_indices[idx]
 
         if label == "silence": # tworzy plik próbki losowo
+
             if not self.deterministic:
                 noise_file = self._rng.choice(self._noise_path)
                 waveform, _ = torchaudio.load(noise_file)
@@ -329,7 +144,7 @@ class SpeechCommandsKWS(Dataset):
                 noise_file = self._noise_path[idx % len(self._noise_path)] # zapewnia cykliczność wyboru pliku z silence
                 waveform, _ = torchaudio.load(noise_file)
 
-            speaker = None # speaker zmieniony na none
+            speaker = "unk" # speaker zmieniony na 'unk' fallback
 
         else:
             waveform, _, raw_label, speaker, _ = self.base_dataset[index]
@@ -374,19 +189,30 @@ class SpeechCommandsKWS(Dataset):
     def number_of_speakers(self, include_silence: bool = False) -> int:
 
         speakers = set()
-
+        # francja elegancja
         for label_type, index in self.final_indices:
-            if (not include_silence) and label_type == "silence":
+
+            if not include_silence and label_type == "silence":
                 continue
-            if label_type == "silence":
-                speakers.add("none")
+
+            if include_silence and label_type == "silence":
+                speakers.add("unk")
+
             else:
                 _, _, _, speaker, _ = self.base_dataset[index]
                 speakers.add(speaker)
+
         return len(speakers)
 
     def visualise_logmel_per_class(self, n_cols: int = 4, figsize=(14, 10)):
 
+        """Pokaż przykład logmel spektrogramu dla każdej z klas
+
+        :param n_cols:
+        :param figsize:
+
+        :return: None (plotuje spektrogramy)
+        """
 
         id_to_name = {value: key for key, value in self.label_map.items()} # ids do nazw etykiet
         label_names = list(self.label_map.keys())  # TARGET + unknown + silence
