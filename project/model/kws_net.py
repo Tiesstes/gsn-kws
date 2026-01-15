@@ -23,6 +23,7 @@ class KWSNet(nn.Module):
 
         assert self.backbone.output_channels == self.speaker_embedding_dimension # jak nie to AssertionError
 
+        # to jest tablica wektorów! o indeksach nieujemnych
         self.speaker_embedding = nn.Embedding(num_of_speakers, self.speaker_embedding_dimension)
 
         # kanałów 32, które wyszły po avg pooling (w sumie to po ostatniej konwolucji)
@@ -31,10 +32,19 @@ class KWSNet(nn.Module):
 
     def forward(self, x, speaker_id) -> torch.Tensor:
 
-        speaker_vector = self.speaker_embedding(speaker_id)  # [B, emb_dim]
+
         backbone_features = self.backbone(x)  # [B, output_channels_dim]
 
-        fused = backbone_features + speaker_vector # można też z tym expand_as
+        # a tu zwracamy indeks -1 dla silence (przez dataset)
+        mask_for_speakers = (speaker_id != -1).float() # [B] sized of bool values (no, bo ja ustawiam -1 w dataset, jeśli to jest silence)
+        # maska działa bo w Pythonie False = 0 !!!!!!!!!!!!!!!!!!!! genialne
+
+        speaker_id_clamped = speaker_id.clamp(min=0) # żeby nie było błędów indeksowania
+
+        speaker_vector = self.speaker_embedding(speaker_id_clamped)  # [B, emb_dim], czyli np [128, 32]
+
+        # więc tutaj, jeśli był silence to maska jest 0!!! bo False, a wektor bierzemy po prostu, żeby coś wziąć
+        fused = backbone_features + (speaker_vector * mask_for_speakers) # można też z tym expand_as
 
         logits = self.classifier(fused) # logit, to funkcja mapująca prawdopodobieństwo [z 32 map cech robimy 12 klas]
                                         # z wartości -inf do +inf i ona prawdę nam powie
