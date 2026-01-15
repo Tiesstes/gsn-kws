@@ -127,9 +127,10 @@ class SplitBuilder:
         return speaker_poor, speaker_rich
 
     def _build_global_speaker_id_map(self):
-
+        """
+        Funkcja pomocnicza, dla splittera - wszyscy speakerzy w datasetcie
+        """
         global_speaker_id_map = set(self.all_speakers)
-        global_speaker_id_map.update({"unk"})  # dla silence już nie ma none (bo po co w embeddingu)
         speaker_ids_map = {speaker: i for i, speaker in enumerate(sorted(global_speaker_id_map))}
 
         return speaker_ids_map
