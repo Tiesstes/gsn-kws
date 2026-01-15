@@ -308,7 +308,6 @@ if __name__ == "__main__":
               f"train loss {training_loss:.4f} accuracy {training_accuracy:.4f}, "
               f"val loss {val_loss:.4f} accuracy {val_accuracy:.4f} "
               f"time {epoch_time:.1f}s")
-        print("")
 
         clear_memory()
 
