@@ -38,6 +38,7 @@ class KWSNet(nn.Module):
         # a tu zwracamy indeks -1 dla silence (przez dataset)
         mask_for_speakers = (speaker_id != -1).float() # [B] sized of bool values (no, bo ja ustawiam -1 w dataset, jeśli to jest silence)
         # maska działa bo w Pythonie False = 0 !!!!!!!!!!!!!!!!!!!! genialne
+        mask_for_speakers = mask_for_speakers.unsqueeze(1) # żeby się zrobiło [B, emv_dim]
 
         speaker_id_clamped = speaker_id.clamp(min=0) # żeby nie było błędów indeksowania
 
