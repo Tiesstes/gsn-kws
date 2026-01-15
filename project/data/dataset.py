@@ -136,15 +136,15 @@ class SpeechCommandsKWS(Dataset):
         label, index = self.final_indices[idx]
 
         if label == "silence": # tworzy plik próbki losowo
+            speaker_id = -1 # explicite wywalić silence z embeddingu
 
             if not self.deterministic:
                 noise_file = self._rng.choice(self._noise_path)
                 waveform, _ = torchaudio.load(noise_file)
+
             else:
                 noise_file = self._noise_path[idx % len(self._noise_path)] # zapewnia cykliczność wyboru pliku z silence
                 waveform, _ = torchaudio.load(noise_file)
-
-            speaker = "unk" # speaker zmieniony na 'unk' fallback
 
         else:
             waveform, _, raw_label, speaker, _ = self.base_dataset[index]
@@ -155,12 +155,13 @@ class SpeechCommandsKWS(Dataset):
             else:
                 label = "unknown"
 
+            speaker_id = self.speaker_id_map.get(speaker, -1)  # -1 oznacza brak embedding'u, jeśli coś nie tak
+
 
         waveform = self._crop_or_pad(waveform)
         mel = self.to_melspec(waveform)
         log_mel = self.to_db(mel)
 
-        speaker_id = self.speaker_id_map.get(speaker, self.speaker_id_map["unk"])
         return {
             "log_mel_spectrogram": log_mel,
             "label": torch.tensor(self.label_map[label], dtype=torch.long),
