@@ -18,7 +18,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module="torchaudio")
 BASE_PATH = Path(__file__).resolve().parent
 GSC_DATASET_PATH = Path(BASE_PATH) / "data"
 NOISE_PATH = Path(GSC_DATASET_PATH) / "SpeechCommands" / "speech_commands_v0.02" / "_background_noise_"
-PRETRAIN_CHECKPOINT = BASE_PATH / "model" / "pretrain_checkpoint.pt"
+PRETRAIN_CHECKPOINT = BASE_PATH / "model" / "pretrain_checkpoint.pt" # tu trzeba na koniec dodać numerek z epoką! to potem
 FINETUNE_CHECKPOINT = BASE_PATH / "model" / "finetune_checkpoint.pt"
 
 DATASPLIT_MANIFEST_PATH = BASE_PATH / "data"/ "splits" / "experiment_v1.pt"
@@ -31,16 +31,16 @@ DO_EVALUATE = False
 
 RESUME_TRAINING = True
 
-PRETRAIN_EPOCHS = 36
+PRETRAIN_EPOCHS = 24
 FINETUNE_EPOCHS = 16
 BATCH_SIZE = 128
 WORKERS = 0
 
-PRETRAIN_LR = 0.01
+PRETRAIN_LR = 0.001
 FINETUNE_LR = 0.01
 WEIGHT_DECAY = 0.0
 SCHEDULER_STEP_SIZE = 4
-SCHEDULER_GAMMA = 0.5
+SCHEDULER_GAMMA = 0.8
 
 def clear_memory():
 
@@ -275,7 +275,7 @@ if __name__ == "__main__":
                             "val_accuracy": val_accuracy,
                             "speaker_id_map": split_manifest["maps"]["speaker_id_map_pretrain" if DO_PRETRAIN else "speaker_id_map_finetune"],
                             "label_map": split_manifest["maps"]["label_map"]},
-                           phase_save_path)
+                           f"{phase_save_path}_{epoch}")
 
 
             print(f"Zapisany checkpoint (val_accuracy={val_accuracy:.4f})")
