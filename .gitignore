@@ -6,3 +6,5 @@
 /project/data/preprocess.py
 /project/data/debug.py
 speech_commands_v0.02.tar.gz
+/project/custom_speech_commands_v2/
+/project/custom_speech_commands_v2_resampled/
