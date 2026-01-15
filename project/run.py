@@ -15,11 +15,19 @@ from project.model.kws_net import KWSNet
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="torchaudio")
 
+
 BASE_PATH = Path(__file__).resolve().parent
 GSC_DATASET_PATH = Path(BASE_PATH) / "data"
 NOISE_PATH = Path(GSC_DATASET_PATH) / "SpeechCommands" / "speech_commands_v0.02" / "_background_noise_"
-PRETRAIN_CHECKPOINT = BASE_PATH / "model" / "pretrain_checkpoint.pt" # tu trzeba na koniec dodać numerek z epoką! to potem
-FINETUNE_CHECKPOINT = BASE_PATH / "model" / "finetune_checkpoint.pt"
+
+PRETRAIN_CHECKPOINT = BASE_PATH / "model" / f"pretrain_checkpoint_" # tu trzeba na koniec dodać numerek z epoką! to potem
+FINETUNE_CHECKPOINT = BASE_PATH / "model" / f"finetune_checkpoint_"
+
+IMPORT_EPOCH = 1
+PRETRAIN_IMPORT_CHECKPOINT = BASE_PATH / "model" / f"pretrain_checkpoint_{IMPORT_EPOCH}.pt" # tu trzeba na koniec dodać numerek z epoką! to potem
+FINETUNE_IMPORT_CHECKPOINT = BASE_PATH / "model" / f"finetune_checkpoint_{IMPORT_EPOCH}.pt"
+
+# zamień na: f"finetune_checkpoint_{IMPORT_EPOCH}.pt"
 
 DATASPLIT_MANIFEST_PATH = BASE_PATH / "data"/ "splits" / "experiment_v1.pt"
 
@@ -31,16 +39,16 @@ DO_EVALUATE = False
 
 RESUME_TRAINING = True
 
-PRETRAIN_EPOCHS = 24
+PRETRAIN_EPOCHS = 48
 FINETUNE_EPOCHS = 16
 BATCH_SIZE = 128
 WORKERS = 0
 
 PRETRAIN_LR = 0.001
-FINETUNE_LR = 0.01
-WEIGHT_DECAY = 0.0
+FINETUNE_LR = 0.001
+WEIGHT_DECAY = 0.1
 SCHEDULER_STEP_SIZE = 4
-SCHEDULER_GAMMA = 0.8
+SCHEDULER_GAMMA = 0.5
 
 def clear_memory():
 
@@ -64,9 +72,9 @@ def load_checkpoint(checkpoint_path, model, optimiser, scheduler, device):
     scheduler.load_state_dict(checkpoint["scheduler_state"])
 
 
-    print(f" Checkpoint załadowany:")
-    print(f"   Epoch: {checkpoint['epoch']}")
-    print(f"   Val accuracy: {checkpoint['val_accuracy']:.4f}\n")
+    print(f"Checkpoint załadowany:")
+    print(f"Epoch: {checkpoint['epoch']}")
+    print(f"Val accuracy: {checkpoint['val_accuracy']:.4f}\n")
 
     return {
         "start_epoch": checkpoint["epoch"] + 1,
@@ -117,7 +125,6 @@ def run_epoch(net_model, data_loader, device, criterion, net_optimiser=None):
 
     return total_loss / max(1, total_n), total_correct / max(1, total_n)
 
-# TODO: resolve the matter of finetune and evaluation integration into one script
 
 if __name__ == "__main__":
 
@@ -151,10 +158,10 @@ if __name__ == "__main__":
     # zawsze zacyznamy od pretrain
     num_of_speakers_pretrain = len(split_manifest["maps"]["speaker_id_map_pretrain"])
 
-    model = KWSNet(num_of_classes, num_of_speakers_pretrain)
+    model = KWSNet(num_of_classes, num_of_speakers_pretrain) # uwaga bo jak jest mismatch embeddingu między wczytanym splitem
+    # a w modelu to jest błąd (niezaimplementowany safeguard)
     model.to(DEVICE)
 
-    # Setup Optimizer once, then override inside phase blocks if needed
     optimiser = torch.optim.Adam(model.parameters(), lr=PRETRAIN_LR)
     scheduler = torch.optim.lr_scheduler.StepLR(optimiser, step_size=SCHEDULER_STEP_SIZE, gamma=SCHEDULER_GAMMA)
 
@@ -167,8 +174,8 @@ if __name__ == "__main__":
         active_training_loader, active_val_loader, _ = build_dataloaders(training_dataset, val_dataset, batch_size=BATCH_SIZE)
 
 
-        if RESUME_TRAINING and PRETRAIN_CHECKPOINT.exists():
-            checkpoint_data = load_checkpoint(PRETRAIN_CHECKPOINT, model, optimiser, scheduler, DEVICE)
+        if RESUME_TRAINING and PRETRAIN_IMPORT_CHECKPOINT.exists():
+            checkpoint_data = load_checkpoint(PRETRAIN_IMPORT_CHECKPOINT, model, optimiser, scheduler, DEVICE)
             if checkpoint_data:
                 start_epoch = checkpoint_data["start_epoch"]
                 best_val_acc = checkpoint_data["best_val_acc"]
@@ -201,9 +208,9 @@ if __name__ == "__main__":
 
 
         # łądowanie wag jeżeli możemy
-        if RESUME_TRAINING and FINETUNE_CHECKPOINT.exists():
+        if RESUME_TRAINING and FINETUNE_IMPORT_CHECKPOINT.exists():
 
-            resume_info_ft = load_checkpoint(FINETUNE_CHECKPOINT, model, optimiser, scheduler, DEVICE)
+            resume_info_ft = load_checkpoint(FINETUNE_IMPORT_CHECKPOINT, model, optimiser, scheduler, DEVICE)
 
             if resume_info_ft:
                 start_epoch = resume_info_ft["start_epoch"]
@@ -212,9 +219,10 @@ if __name__ == "__main__":
             print(f"Wznawiam finetune od epoki {start_epoch}")
             print(f"Najlepsze val_acc: {best_val_acc:.4f}\n")
 
-        elif PRETRAIN_CHECKPOINT.exists():
-            checkpoint = torch.load(PRETRAIN_CHECKPOINT, map_location=DEVICE)
-            model.load_state_dict(checkpoint["model_state"], strict=False)  # strict=False because of resized embedding
+        elif PRETRAIN_IMPORT_CHECKPOINT.exists():
+
+            checkpoint = torch.load(PRETRAIN_IMPORT_CHECKPOINT, map_location=DEVICE)
+            model.load_state_dict(checkpoint["model_state"], strict=False)  # strict=False bo embedding się zmienił
 
         print("kształt Embedding'u:", model.speaker_embedding.weight.shape)
 
@@ -275,7 +283,7 @@ if __name__ == "__main__":
                             "val_accuracy": val_accuracy,
                             "speaker_id_map": split_manifest["maps"]["speaker_id_map_pretrain" if DO_PRETRAIN else "speaker_id_map_finetune"],
                             "label_map": split_manifest["maps"]["label_map"]},
-                           f"{phase_save_path}_{epoch}")
+                           f"{phase_save_path}{epoch}.pt")
 
 
             print(f"Zapisany checkpoint (val_accuracy={val_accuracy:.4f})")
