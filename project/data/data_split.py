@@ -430,7 +430,7 @@ def build_phase_datasets(manifest: Dict[str, Any], phase: Literal["pretrain", "f
     """
 
     config = manifest["config"]
-    phase_splits = manifest["splits"][phase]
+    data_split = manifest["splits"][phase]
     maps = manifest["maps"]
 
     # zawsze ten sam (ta sama wersja, ta sama ścieżka root),
@@ -450,7 +450,7 @@ def build_phase_datasets(manifest: Dict[str, Any], phase: Literal["pretrain", "f
         raise ValueError(f"unknown stage: {phase}")
 
     # parametry takie same dla dataset'ów różnych faz eksperymentu
-    common_kwargs = dict(dataset=base_data, allowed_speakers=phase_splits["allowed_speakers"], speaker_id_map=speaker_id_map,
+    common_kwargs = dict(dataset=base_data, allowed_speakers=data_split["allowed_speakers"], speaker_id_map=speaker_id_map,
                          noise_dir=config["noise_dir"], duration=config["duration"],
                          sample_rate=config["sample_rate"], number_of_mel_bands=config["number_of_mel_bands"],
                          silence_per_target=config["silence_per_target"], unknown_to_target_ratio=config["unknown_to_target_ratio"],
@@ -458,17 +458,17 @@ def build_phase_datasets(manifest: Dict[str, Any], phase: Literal["pretrain", "f
 
 
     # niedeterministyczny (więc losowy crop / losowy "silence") ** to rozpakowanie klucza i wartości
-    train_dataset = SpeechCommandsKWS(split_indices=phase_splits["train_indices"], deterministic=False, **common_kwargs)
+    train_dataset = SpeechCommandsKWS(split_indices=data_split["train_indices"], deterministic=False, **common_kwargs)
 
     # deterministyczny zawsez
-    val_dataset = SpeechCommandsKWS(split_indices=phase_splits["val_indices"], deterministic=deterministic, **common_kwargs)
+    val_dataset = SpeechCommandsKWS(split_indices=data_split["val_indices"], deterministic=deterministic, **common_kwargs)
 
     test_dataset: Optional[SpeechCommandsKWS]
     test_dataset = None
 
     # opcjonalny, o tylko przy finetune
     if phase == "finetune":
-        test_dataset = SpeechCommandsKWS(split_indices=phase_splits["test_indices"], deterministic=deterministic, **common_kwargs)
+        test_dataset = SpeechCommandsKWS(split_indices=data_split["test_indices"], deterministic=deterministic, **common_kwargs)
 
 
     return train_dataset, val_dataset, test_dataset
