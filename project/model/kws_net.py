@@ -74,13 +74,13 @@ class KWSNet(nn.Module):
         self.speaker_embedding = new_embedding
         return self
 
-
+    # mrozi backbone
     def freeze_backbone(self):
         for parametr in self.backbone.parameters():
             parametr.requires_grad = False
         print("Backbone is now frozen")
 
-
+    # bo parameters() zwraca wszystkie parametry w sieci!
     def get_trainable_parameters(self):
         return [parameter for parameter in self.parameters() if parameter.requires_grad == True]
 
