@@ -76,11 +76,10 @@ def load_checkpoint(checkpoint_path, model, optimiser, scheduler, device):
     print(f"Epoch: {checkpoint['epoch']}")
     print(f"Val accuracy: {checkpoint['val_accuracy']:.4f}\n")
 
-    return {
-        "start_epoch": checkpoint["epoch"] + 1,
-        "best_val_acc": checkpoint["val_accuracy"],
-        "speaker_id_map": checkpoint["speaker_id_map"],
-        "label_map": checkpoint["label_map"]}
+    return {"start_epoch": checkpoint["epoch"] + 1,
+            "best_val_acc": checkpoint["val_accuracy"],
+            "speaker_id_map": checkpoint["speaker_id_map"],
+            "label_map": checkpoint["label_map"]}
 
 
 
@@ -96,7 +95,6 @@ def run_epoch(net_model, data_loader, device, criterion, net_optimiser=None):
         net_model.train(False)
         mode = torch.no_grad()
 
-    #criterion = torch.nn.CrossEntropyLoss() # TODO: wywalić na zewnątrz
     total_loss = 0.0
     total_correct = 0
     total_n = 0
@@ -129,10 +127,12 @@ def run_epoch(net_model, data_loader, device, criterion, net_optimiser=None):
 if __name__ == "__main__":
 
     print("Device:", DEVICE)
+
     if torch.cuda.is_available():
         print("CUDA:", torch.cuda.get_device_name(0))
+
     print("Torch version:", torch.__version__)
-    print()
+    print("")
 
     # tutaj robimy podstawowy dataset z danymi GSC
     print("Ładuję dataset SPEECHCOMMANDS...")
@@ -166,6 +166,7 @@ if __name__ == "__main__":
     scheduler = torch.optim.lr_scheduler.StepLR(optimiser, step_size=SCHEDULER_STEP_SIZE, gamma=SCHEDULER_GAMMA)
 
     if DO_PRETRAIN:
+
         phase_name = "PRETRAIN"
         phase_save_path = PRETRAIN_CHECKPOINT
         epochs_per_phase = PRETRAIN_EPOCHS
@@ -176,6 +177,7 @@ if __name__ == "__main__":
 
         if RESUME_TRAINING and PRETRAIN_IMPORT_CHECKPOINT.exists():
             checkpoint_data = load_checkpoint(PRETRAIN_IMPORT_CHECKPOINT, model, optimiser, scheduler, DEVICE)
+
             if checkpoint_data:
                 start_epoch = checkpoint_data["start_epoch"]
                 best_val_acc = checkpoint_data["best_val_acc"]
