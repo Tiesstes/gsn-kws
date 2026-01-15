@@ -11,7 +11,7 @@ from torchaudio.datasets import SPEECHCOMMANDS
 # TARGET_LABELS to lista 10 naszych komend
 from project.data.dataset import SpeechCommandsKWS, TARGET_LABELS
 
-# TODO: uzupełnić docsstring i przetestować
+# TODO: uzupełnić docstring
 
 # pomoc, żeby były stałe loadery i krótki kod
 def build_dataloaders(train_ds, val_ds, test_ds=None, batch_size: int = 128,
@@ -122,7 +122,7 @@ class SplitBuilder:
             if min_target >= self.finetune_min_samples_per_class:
                 speaker_rich.add(speaker)
 
-        # poor: wszyscy pozostali (w tym AUX-only)
+        # poor: wszyscy pozostali (w tym tylko AUXILIARY)
         speaker_poor = set(self.all_speakers) - speaker_rich
         return speaker_poor, speaker_rich
 
@@ -358,42 +358,34 @@ def prepare_splits_manifest(data_manifest_path: Path, gsc_dataset_path: Path, no
     # taki plik config z eksperymentu
     manifest: Dict[str, Any] = {
 
-        "config": {
-
-            "seed": seed,
-            "fine_tune_min_samples_per_class": finetune_min_samples_per_class,
-            "pretrain_val_ratio": pretrain_val_ratio,
-            "duration": duration,
-            "sample_rate": sample_rate,
-            "number_of_mel_bands": number_of_mel_bands,
-            "silence_per_target": silence_per_target,
-            "unknown_to_target_ratio": unknown_to_target_ratio,
-            "gsc_dataset_path": str(gsc_dataset_path),
-            "noise_dir": str(noise_dir)},
+        "config": {"seed": seed,
+                   "fine_tune_min_samples_per_class": finetune_min_samples_per_class,
+                   "pretrain_val_ratio": pretrain_val_ratio,
+                   "duration": duration,
+                   "sample_rate": sample_rate,
+                   "number_of_mel_bands": number_of_mel_bands,
+                   "silence_per_target": silence_per_target,
+                   "unknown_to_target_ratio": unknown_to_target_ratio,
+                   "gsc_dataset_path": str(gsc_dataset_path),
+                   "noise_dir": str(noise_dir)},
 
         # tutaj indeksy
         "splits": {
 
-            "pretrain": {
-                # deterministycznie, bo wyliczone raz
-                "train_indices": pretrain_split["train"],
-                "val_indices": pretrain_split["val"],
-                # Zbiór speakerów dopuszczonych w tej fazie (wpływa m.in. na unknown_indices).[file:70]
-                "allowed_speakers": pretrain_split["allowed_speakers"]
-            },
+            "pretrain": { # deterministycznie, bo wyliczone raz
+                    "train_indices": pretrain_split["train"],
+                    "val_indices": pretrain_split["val"],
+                    # Zbiór speakerów dopuszczonych w tej fazie (wpływa m.in. na unknown_indices).[file:70]
+                    "allowed_speakers": pretrain_split["allowed_speakers"]},
 
-            "finetune": {
-                "train_indices": finetune_split["train"],
-                "val_indices": finetune_split["val"],
-                "test_indices": finetune_split["test"],
-                "allowed_speakers": finetune_split["allowed_speakers"]
-            },
-        },
+            "finetune": {"train_indices": finetune_split["train"],
+                         "val_indices": finetune_split["val"],
+                         "test_indices": finetune_split["test"],
+                         "allowed_speakers": finetune_split["allowed_speakers"]},},
 
-        "maps": {
-            "label_map": build_label_map(),
-            "speaker_id_map_pretrain": speaker_id_map_pretrain,
-            "speaker_id_map_finetune": speaker_id_map_finetune}
+        "maps": {"label_map": build_label_map(),
+                 "speaker_id_map_pretrain": speaker_id_map_pretrain,
+                 "speaker_id_map_finetune": speaker_id_map_finetune}
     }
 
     # zapisywanie
@@ -457,8 +449,8 @@ def build_phase_datasets(manifest: Dict[str, Any], phase: Literal["pretrain", "f
                          seed=config["seed"], label_map=maps["label_map"])
 
 
-    # niedeterministyczny (więc losowy crop / losowy "silence") ** to rozpakowanie klucza i wartości
-    train_dataset = SpeechCommandsKWS(split_indices=data_split["train_indices"], deterministic=False, **common_kwargs)
+    # niedeterministyczny (więc losowy crop / losowy "silence") ** to rozpakowanie klucza i wartości -> nieaktualny komentarz
+    train_dataset = SpeechCommandsKWS(split_indices=data_split["train_indices"], deterministic=True, **common_kwargs)
 
     # deterministyczny zawsez
     val_dataset = SpeechCommandsKWS(split_indices=data_split["val_indices"], deterministic=deterministic, **common_kwargs)
