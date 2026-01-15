@@ -36,7 +36,7 @@ FINETUNE_EPOCHS = 16
 BATCH_SIZE = 128
 WORKERS = 0
 
-PRETRAIN_LR = 0.001
+PRETRAIN_LR = 0.01
 FINETUNE_LR = 0.01
 WEIGHT_DECAY = 0.0
 SCHEDULER_STEP_SIZE = 4
@@ -131,6 +131,10 @@ if __name__ == "__main__":
     print("Ładuję dataset SPEECHCOMMANDS...")
     #base_data = SPEECHCOMMANDS(root=GSC_DATASET_PATH, subset=None, download=True)
 
+    # do pętli treningowej
+    start_epoch = 1
+    best_val_acc = -1.0  # żeby mieć pewność, że na pewno wyłapiemy najlepsze accuracy
+
 
     # spójrzmy czy jest jakiś plik ze splitami
     if not DATASPLIT_MANIFEST_PATH.exists():
@@ -143,28 +147,84 @@ if __name__ == "__main__":
     # jak jest to wczytanie od razu (albo po utworzeniu)
     split_manifest = load_splits_manifest(DATASPLIT_MANIFEST_PATH)
 
-    # TODO: przenieść do logiki flag PRETRAIN etc.
-    pretrain_train_dataset, pretrain_val_dataset, _ = build_phase_datasets(split_manifest, "pretrain", False)
-
-    # w środku ustalone, że shuffle się robi tylko na trening
-    pretrain_train_ld, pretrain_val_ld, _ = build_dataloaders(pretrain_train_dataset, pretrain_val_dataset,  batch_size=BATCH_SIZE, num_workers=WORKERS)
-
     num_of_classes = len(split_manifest["maps"]["label_map"])
+    # zawsze zacyznamy od pretrain
     num_of_speakers_pretrain = len(split_manifest["maps"]["speaker_id_map_pretrain"])
 
     model = KWSNet(num_of_classes, num_of_speakers_pretrain)
     model.to(DEVICE)
 
-    criterion = CrossEntropyLoss()
-    # optymalizator i harmongramator (okresowa zmiana wartości learning_rate)
-
-    # weights decay to regularyzacja L2 - karze duże wagi;
-    # czyli dodaje karę do straty jako λ * w^2 (to się dziele w optymalizatorze),
-    # a ta λ = weight_decay
-    optimiser = torch.optim.Adam(model.parameters(), lr=PRETRAIN_LR, weight_decay=WEIGHT_DECAY)
-
+    # Setup Optimizer once, then override inside phase blocks if needed
+    optimiser = torch.optim.Adam(model.parameters(), lr=PRETRAIN_LR)
     scheduler = torch.optim.lr_scheduler.StepLR(optimiser, step_size=SCHEDULER_STEP_SIZE, gamma=SCHEDULER_GAMMA)
 
+    if DO_PRETRAIN:
+        phase_name = "PRETRAIN"
+        phase_save_path = PRETRAIN_CHECKPOINT
+        epochs_per_phase = PRETRAIN_EPOCHS
+
+        training_dataset, val_dataset, _ = build_phase_datasets(split_manifest, "pretrain", False)
+        active_training_loader, active_val_loader, _ = build_dataloaders(training_dataset, val_dataset, batch_size=BATCH_SIZE)
+
+
+        if RESUME_TRAINING and PRETRAIN_CHECKPOINT.exists():
+            checkpoint_data = load_checkpoint(PRETRAIN_CHECKPOINT, model, optimiser, scheduler, DEVICE)
+            if checkpoint_data:
+                start_epoch = checkpoint_data["start_epoch"]
+                best_val_acc = checkpoint_data["best_val_acc"]
+                print("Odtworzyłem checkpoint do PRETRENING")
+
+
+        print("kształt Embedding'u:", model.speaker_embedding.weight.shape)
+
+    elif DO_FINETUNE:
+
+        phase_name = "FINETUNE"
+        phase_save_path = FINETUNE_CHECKPOINT
+        epochs_per_phase = FINETUNE_EPOCHS
+
+
+        # zwiększmy embedding
+        num_speakers_ft = len(split_manifest["maps"]["speaker_id_map_finetune"])
+        model.ensure_num_of_speakers(num_speakers_ft)
+
+        model.freeze_backbone()  # zamróź wagi backbone
+
+        # optymalizator i harmongramator (okresowa zmiana wartości learning_rate)
+
+        # weights decay to regularyzacja L2 - karze duże wagi;
+        # czyli dodaje karę do straty jako λ * w^2 (to się dziele w optymalizatorze),
+        # a ta λ = weight_decay
+        optimiser = torch.optim.Adam(model.get_trainable_parameters(), lr=FINETUNE_LR, weight_decay=WEIGHT_DECAY)
+
+        scheduler = torch.optim.lr_scheduler.StepLR(optimiser, step_size=SCHEDULER_STEP_SIZE, gamma=SCHEDULER_GAMMA)
+
+
+        # łądowanie wag jeżeli możemy
+        if RESUME_TRAINING and FINETUNE_CHECKPOINT.exists():
+
+            resume_info_ft = load_checkpoint(FINETUNE_CHECKPOINT, model, optimiser, scheduler, DEVICE)
+
+            if resume_info_ft:
+                start_epoch = resume_info_ft["start_epoch"]
+                best_val_acc = resume_info_ft["best_val_acc"]
+
+            print(f"Wznawiam finetune od epoki {start_epoch}")
+            print(f"Najlepsze val_acc: {best_val_acc:.4f}\n")
+
+        elif PRETRAIN_CHECKPOINT.exists():
+            checkpoint = torch.load(PRETRAIN_CHECKPOINT, map_location=DEVICE)
+            model.load_state_dict(checkpoint["model_state"], strict=False)  # strict=False because of resized embedding
+
+        print("kształt Embedding'u:", model.speaker_embedding.weight.shape)
+
+        training_dataset, val_dataset, test_dataset = build_phase_datasets(split_manifest, "finetune")
+        active_training_loader, active_val_loader, _ = build_dataloaders(training_dataset, val_dataset, test_dataset, batch_size=BATCH_SIZE)
+
+
+    criterion = CrossEntropyLoss()
+
+    print()
     print("~~ARCHITEKTURA SIECI~~")
     print()
 
@@ -174,74 +234,28 @@ if __name__ == "__main__":
 
     summary(model, depth=5, input_data=(x, speaker))
 
-    # do pętli treningowej
-    start_epoch = 1
-    best_val_acc = -1.0 # żeby mieć pewność, że na pewno wyłapiemy najlepsze accuracy
-
-    if RESUME_TRAINING and PRETRAIN_CHECKPOINT.exists() and DO_PRETRAIN:
-        resume_info_pre = load_checkpoint(PRETRAIN_CHECKPOINT, model, optimiser, scheduler, DEVICE)
-        print("kształt Embedding'u:", model.speaker_embedding.weight.shape)
-
-        if resume_info_pre:
-
-            start_epoch = resume_info_pre["start_epoch"]
-            best_val_acc = resume_info_pre["best_val_acc"]
-
-            print(f"Wznawiam trening od epoki {start_epoch}")
-            print(f"Najlepsze val_acc: {best_val_acc:.4f}\n")
-
-    else:
-        if not DO_FINETUNE and not DO_EVALUATE:
-            print("Rozpoczynam trening od 0\n")
-
-
-    if FINETUNE_CHECKPOINT.exists() and RESUME_TRAINING and DO_FINETUNE:
-        resume_info_ft = load_checkpoint(FINETUNE_CHECKPOINT, model, optimiser, scheduler, DEVICE)
-        print("kształt Embedding'u:", model.speaker_embedding.weight.shape)
-
-        if resume_info_ft:
-            start_epoch_ft = resume_info_ft["start_epoch"]
-            best_val_acc_ft = resume_info_ft["best_val_acc"]
-            print(f"Wznawiam finetune od epoki {start_epoch_ft}")
-            print(f"Najlepsze val_acc: {best_val_acc_ft:.4f}\n")
-
-    if DO_EVALUATE and not RESUME_TRAINING:
-
-        if FINETUNE_CHECKPOINT.exists():
-            evaluation_checkpoint = FINETUNE_CHECKPOINT
-            model.load_state_dict(torch.load(evaluation_checkpoint, map_location=DEVICE)["model_state"])
-            print("kształt Embedding'u:", model.speaker_embedding.weight.shape)
-
-        elif PRETRAIN_CHECKPOINT.exists():
-            evaluation_checkpoint = PRETRAIN_CHECKPOINT
-            model.load_state_dict(torch.load(evaluation_checkpoint, map_location=DEVICE)["model_state"])
-            print("kształt Embedding'u:", model.speaker_embedding.weight.shape)
-
-        else:
-            raise FileNotFoundError("Nie istnieje żaden plik z checkpoint'em")
-
 
 
     torch.cuda.synchronize()  # żeby poczekać, aż GPU dokończy obliczenia zanim zmierzymy czas
     start = time.perf_counter()
 
-    print(f"Przechodzę do treningu PRETRAIN - epoka {start_epoch} z {PRETRAIN_EPOCHS}")
+    print(f"Przechodzę do {phase_name} - epoka {start_epoch} z {epochs_per_phase}")
     print("")
 
 
-    for epoch in range(start_epoch, PRETRAIN_EPOCHS + 1):
+    for epoch in range(start_epoch, epochs_per_phase + 1):
 
         epoch_start = time.perf_counter()
 
-        training_loss, training_accuracy = run_epoch(model, pretrain_train_ld, DEVICE, criterion, net_optimiser=optimiser)
-        val_loss, val_accuracy = run_epoch(model, pretrain_val_ld, DEVICE, criterion, net_optimiser=None)
+        training_loss, training_accuracy = run_epoch(model, active_training_loader, DEVICE, criterion, optimiser)
+        val_loss, val_accuracy = run_epoch(model, active_val_loader, DEVICE, criterion, None)
 
         scheduler.step() # po epoce (zmieni lr, jeśli epoka przeszła step size
 
         torch.cuda.synchronize()
         epoch_time = time.perf_counter() - epoch_start
 
-        print(f"Epoch of PRETRAIN {epoch:02d}, "
+        print(f"Epoch of {phase_name} {epoch:02d}, "
               f"train loss {training_loss:.4f} accuracy {training_accuracy:.4f}, "
               f"val loss {val_loss:.4f} accuracy {val_accuracy:.4f} "
               f"time {epoch_time:.1f}s")
@@ -250,18 +264,18 @@ if __name__ == "__main__":
 
         # zapisuj ten najlepszy checkpoint (najlepsze osiągi)
         if val_accuracy > best_val_acc:
-
             best_val_acc = val_accuracy
 
-            PRETRAIN_CHECKPOINT.parent.mkdir(parents=True, exist_ok=True)
+            # musi istnieć
+            phase_save_path.parent.mkdir(parents=True, exist_ok=True)
 
-            torch.save({"epoch": epoch,
-                        "model_state": model.state_dict(), "optimiser_state": optimiser.state_dict(),
-                        "scheduler_state": scheduler.state_dict(),
-                        "speaker_id_map": split_manifest["maps"]["speaker_id_map_pretrain"],
-                        "label_map": split_manifest["maps"]["label_map"],
-                        "val_accuracy": val_accuracy},
-                       PRETRAIN_CHECKPOINT)
+            best_val_acc = val_accuracy
+            torch.save({"epoch": epoch, "model_state": model.state_dict(),
+                            "optimiser_state": optimiser.state_dict(), "scheduler_state": scheduler.state_dict(),
+                            "val_accuracy": val_accuracy,
+                            "speaker_id_map": split_manifest["maps"]["speaker_id_map_pretrain" if DO_PRETRAIN else "speaker_id_map_finetune"],
+                            "label_map": split_manifest["maps"]["label_map"]},
+                           phase_save_path)
 
 
             print(f"Zapisany checkpoint (val_accuracy={val_accuracy:.4f})")
@@ -273,5 +287,5 @@ if __name__ == "__main__":
 
     print(f"Zakończono trenowanie w całkowitym czasie: {total_time:.1f}s")
     print(f"NAjlepsza wartość val_accuracy: {best_val_acc:.4f}")
-    print(f"Checkpoint zapisany w: {PRETRAIN_CHECKPOINT}")
+    print(f"Checkpoint zapisany w: {phase_save_path}")
 
