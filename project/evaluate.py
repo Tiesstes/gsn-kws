@@ -11,10 +11,12 @@ from project.model.kws_net import KWSNet
 
 import warnings
 
+import os
+
 warnings.filterwarnings("ignore", category=UserWarning, module="torchaudio")
 
 # konfiguracje
-BASE_PATH = Path(__file__).resolve().parent.parent
+BASE_PATH = Path(__file__).resolve().parent
 GSC_PATH = BASE_PATH / "data"
 NOISE_PATH = GSC_PATH / "SpeechCommands" / "speech_commands_v0.02" / "_background_noise_"
 DATASPLIT_MANIFEST_PATH = BASE_PATH / "data" / "splits" / "experiment_v1.pt"
@@ -96,6 +98,7 @@ if __name__ == "__main__":
 
     # SPEECHCOMMANDS
     print("Ładuję dataset SPEECHCOMMANDS...")
+    os.makedirs(GSC_PATH, exist_ok=True)
     base_data = SPEECHCOMMANDS(root=GSC_PATH, subset=None, download=True)
 
     # splitbuilder
