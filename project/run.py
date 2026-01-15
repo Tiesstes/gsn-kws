@@ -7,8 +7,8 @@ import torch
 from torch.nn import CrossEntropyLoss
 from torchinfo import summary
 
-
-from project.data.data_split import prepare_splits_manifest, load_splits_manifest, build_phase_datasets, build_dataloaders
+from project.data.dataset import extract_custom_speakers, collect_all_custom_wavs, split_custom_data, CustomWAVSpeechCommandsKWS
+from project.data.data_split import prepare_splits_manifest, load_splits_manifest, build_phase_datasets, build_dataloaders, extend_speaker_id_map
 
 from project.model.kws_net import KWSNet
 
@@ -23,7 +23,7 @@ NOISE_PATH = Path(GSC_DATASET_PATH) / "SpeechCommands" / "speech_commands_v0.02"
 PRETRAIN_CHECKPOINT = BASE_PATH / "model" / f"pretrain_checkpoint_" # tu trzeba na koniec dodać numerek z epoką! to potem
 FINETUNE_CHECKPOINT = BASE_PATH / "model" / f"finetune_checkpoint_"
 
-IMPORT_EPOCH = 1
+IMPORT_EPOCH = 33 # to jest wspólna zmienna do odtwarzania checkpoint'ów!
 PRETRAIN_IMPORT_CHECKPOINT = BASE_PATH / "model" / f"pretrain_checkpoint_{IMPORT_EPOCH}.pt" # tu trzeba na koniec dodać numerek z epoką! to potem
 FINETUNE_IMPORT_CHECKPOINT = BASE_PATH / "model" / f"finetune_checkpoint_{IMPORT_EPOCH}.pt"
 
@@ -33,20 +33,20 @@ DATASPLIT_MANIFEST_PATH = BASE_PATH / "data"/ "splits" / "experiment_v1.pt"
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-DO_PRETRAIN = True
-DO_FINETUNE = False
+DO_PRETRAIN = False
+DO_FINETUNE = True
 DO_EVALUATE = False
 
-RESUME_TRAINING = True
+RESUME_TRAINING = False
 
 PRETRAIN_EPOCHS = 48
-FINETUNE_EPOCHS = 16
-BATCH_SIZE = 128
+FINETUNE_EPOCHS = 48
+BATCH_SIZE = 64
 WORKERS = 0
 
 PRETRAIN_LR = 0.001
-FINETUNE_LR = 0.001
-WEIGHT_DECAY = 0.1
+FINETUNE_LR = 0.0001
+WEIGHT_DECAY = 0.0
 SCHEDULER_STEP_SIZE = 4
 SCHEDULER_GAMMA = 0.5
 
@@ -192,15 +192,50 @@ if __name__ == "__main__":
         phase_save_path = FINETUNE_CHECKPOINT
         epochs_per_phase = FINETUNE_EPOCHS
 
+        # !!!!!!!!!!!!!! custom dataset !!!!!!!!!!!!!!
+        # insert speakerów custom
+        CUSTOM_DATA_ROOT = Path(GSC_DATASET_PATH) / "SpeechCommands" / "custom_speech_commands_v0.02"
+        custom_speakers_map = extract_custom_speakers(CUSTOM_DATA_ROOT)
+
+        print(f"Spekaerzy z własnego datasetu: {sorted(custom_speakers_map)}")
+
+
+        custom_spakers_id_map = extend_speaker_id_map(split_manifest["maps"]["speaker_id_map_pretrain"],
+                                                      custom_speakers_map)
+
+        print(f"Starych speakerów, było - {len(split_manifest["maps"]["speaker_id_map_pretrain"])}")
+
+        train_indices, val_indices, test_indices = split_custom_data(CUSTOM_DATA_ROOT,train_ratio=0.7,val_ratio=0.15,
+                                                                     test_ratio=0.15,seed=1234)
+
+        label_map = split_manifest["maps"]["label_map"]
+
+        training_dataset = CustomWAVSpeechCommandsKWS(CUSTOM_DATA_ROOT, train_indices, custom_spakers_id_map, label_map,
+                                                      sample_rate=16000, duration=1.0, number_of_mel_bands=40,
+                                                      deterministic=True, seed=1234)  #  nie ma mieszania który wycinek z silence (chociaż tutaj to bez znaczenia)
+
+        val_dataset = CustomWAVSpeechCommandsKWS(CUSTOM_DATA_ROOT, val_indices, custom_spakers_id_map, label_map,
+                                                 sample_rate=16000, duration=1.0, number_of_mel_bands=40,
+                                                 deterministic=True, seed=1234)
+
+        test_dataset = CustomWAVSpeechCommandsKWS(CUSTOM_DATA_ROOT, test_indices, custom_spakers_id_map, label_map,
+                                                  sample_rate=16000, duration=1.0, number_of_mel_bands=40,
+                                                  deterministic=True, seed=1234)
+
+
+        # Bezpośrednie użycie DataLoader zamiast build_dataloaders
+        from torch.utils.data import DataLoader
+        active_training_loader = DataLoader(training_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=WORKERS)
+        active_val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=WORKERS)
 
         # zwiększmy embedding
-        num_speakers_ft = len(split_manifest["maps"]["speaker_id_map_finetune"])
-        model.ensure_num_of_speakers(num_speakers_ft)
+        num_speakers_ft = len(custom_spakers_id_map)
+
+        print(f"Mapa speakerów została zaktualizowana do liczby -> {num_speakers_ft}")
 
         model.freeze_backbone()  # zamróź wagi backbone
 
         # optymalizator i harmongramator (okresowa zmiana wartości learning_rate)
-
         # weights decay to regularyzacja L2 - karze duże wagi;
         # czyli dodaje karę do straty jako λ * w^2 (to się dziele w optymalizatorze),
         # a ta λ = weight_decay
@@ -212,19 +247,24 @@ if __name__ == "__main__":
         # łądowanie wag jeżeli możemy
         if RESUME_TRAINING and FINETUNE_IMPORT_CHECKPOINT.exists():
 
-            resume_info_ft = load_checkpoint(FINETUNE_IMPORT_CHECKPOINT, model, optimiser, scheduler, DEVICE)
+            model.ensure_num_of_speakers(num_speakers_ft)
+            checkpoint_finetune = load_checkpoint(FINETUNE_IMPORT_CHECKPOINT, model, optimiser, scheduler, DEVICE)
 
-            if resume_info_ft:
-                start_epoch = resume_info_ft["start_epoch"]
-                best_val_acc = resume_info_ft["best_val_acc"]
+            if checkpoint_finetune:
+                start_epoch = checkpoint_finetune["start_epoch"]
+                best_val_acc = checkpoint_finetune["best_val_acc"]
 
             print(f"Wznawiam finetune od epoki {start_epoch}")
             print(f"Najlepsze val_acc: {best_val_acc:.4f}\n")
 
-        elif PRETRAIN_IMPORT_CHECKPOINT.exists():
+        elif PRETRAIN_IMPORT_CHECKPOINT.exists(): # jak nie to pretrain
 
             checkpoint = torch.load(PRETRAIN_IMPORT_CHECKPOINT, map_location=DEVICE)
-            model.load_state_dict(checkpoint["model_state"], strict=False)  # strict=False bo embedding się zmienił
+            # tutaj musimy ładować 2613 embeddingów i zmienić liczbę speakerów
+            model.load_state_dict(checkpoint["model_state"], strict=True)
+            print("Pretrain checkpoint załadowany do finetune start (nie było innego)")
+            model.ensure_num_of_speakers(num_speakers_ft)
+
 
         print("kształt Embedding'u:", model.speaker_embedding.weight.shape)
 
@@ -243,8 +283,6 @@ if __name__ == "__main__":
     speaker = torch.randint(0, speakers, (BATCH_SIZE,), device=DEVICE)  # LONG!
 
     summary(model, depth=5, input_data=(x, speaker))
-
-
 
     torch.cuda.synchronize()  # żeby poczekać, aż GPU dokończy obliczenia zanim zmierzymy czas
     start = time.perf_counter()
@@ -265,10 +303,12 @@ if __name__ == "__main__":
         torch.cuda.synchronize()
         epoch_time = time.perf_counter() - epoch_start
 
+        print("")
         print(f"Epoch of {phase_name} {epoch:02d}, "
               f"train loss {training_loss:.4f} accuracy {training_accuracy:.4f}, "
               f"val loss {val_loss:.4f} accuracy {val_accuracy:.4f} "
               f"time {epoch_time:.1f}s")
+        print("")
 
         clear_memory()
 
@@ -278,6 +318,11 @@ if __name__ == "__main__":
 
             # musi istnieć
             phase_save_path.parent.mkdir(parents=True, exist_ok=True)
+
+            speaker_id_map_to_save = (
+                split_manifest["maps"]["speaker_id_map_pretrain"] if DO_PRETRAIN
+                else custom_spakers_id_map  # [MODIF] Rozszerzony o nowych mówców
+            )
 
             best_val_acc = val_accuracy
             torch.save({"epoch": epoch, "model_state": model.state_dict(),
@@ -294,8 +339,9 @@ if __name__ == "__main__":
     # torch.cuda.synchronize()
     total_time = time.perf_counter() - start
 
-
-    print(f"Zakończono trenowanie w całkowitym czasie: {total_time:.1f}s")
-    print(f"NAjlepsza wartość val_accuracy: {best_val_acc:.4f}")
-    print(f"Checkpoint zapisany w: {phase_save_path}")
+    print("")
+    print(f"Trebiwanie trwało: {total_time:.1f}s")
+    print(f"Najlepsza wartość val_accuracy: {best_val_acc:.4f}")
+    print(f"Checkpoint zapisany w: {phase_save_path}{epoch}")
+    print("")
 
