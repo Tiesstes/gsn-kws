@@ -334,7 +334,7 @@ class CustomWAVSpeechCommandsKWS(Dataset):
             label = label_folder.name.lower()  # np. "yes"
 
             if label not in self.label_map:
-                print(f"[WARNING] Pomijam folder '{label}' - nie ma w label_map")
+                print(f"[UWAGAAA] Pomijam folder '{label}' - nie ma w label_map")
                 continue
 
             for wav_file in sorted(label_folder.glob("*.wav")):
@@ -480,7 +480,8 @@ def extract_custom_speakers(root_dir: Path) -> set:
             continue
 
         for wav_file in label_folder.glob("*.wav"):
-            speaker = wav_file.name.split("_")[0]
+
+            speaker = wav_file.stem.split("_")[0].lower()
             speakers.add(speaker)
 
     return speakers
