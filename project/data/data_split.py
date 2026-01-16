@@ -145,10 +145,12 @@ class SplitBuilder:
     @staticmethod
     def build_speaker_id_map_from_speakers(speakers: set[str]):
 
-        speakers = set(speakers)
-        speakers.update({"unk": 0})
+        # to upewnia, że mapy są takie same zawsze bo set nie umie w zachowaną kolejność alfabetyczną, a lista umie
+        speakers_list = sorted(list(set(speakers) - {"unk"}))
+        speaker_map_from_speakers = {"unk": 0}
 
-        speaker_map_from_speakers = {speaker: i for i, speaker in enumerate(sorted(speakers))}
+        for i, speaker in enumerate(speakers_list, start=1):
+            speaker_map_from_speakers[speaker] = i
 
         return speaker_map_from_speakers
 
