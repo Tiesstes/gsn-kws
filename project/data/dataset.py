@@ -457,7 +457,7 @@ def split_custom_data( root_dir: Path, train_ratio: float = 0.7, val_ratio: floa
     val_indices = indices[train_end:val_end]
     test_indices = indices[val_end:]
 
-    print(f"[INFORMACJAAAAAAA!!!] Custom splity train={len(train_indices)}, val={len(val_indices)}, test={len(test_indices)}")
+    print(f"[INFORMACJAAAAAAA!!!] Custom splity train={len(train_indices)}, val={len(val_indices)}, test={len(test_indices)} ----- z {root_dir}")
 
     return train_indices, val_indices, test_indices
 
