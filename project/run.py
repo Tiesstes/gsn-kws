@@ -35,11 +35,11 @@ DATASPLIT_MANIFEST_PATH = BASE_PATH / "data"/ "splits" / "experiment_v1.pt"
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-DO_PRETRAIN = False
-DO_FINETUNE = True
+DO_PRETRAIN = True
+DO_FINETUNE = False
 DO_EVALUATE = False
 
-RESUME_TRAINING = True
+RESUME_TRAINING = False
 
 PRETRAIN_EPOCHS = 56
 FINETUNE_EPOCHS = 24
@@ -48,9 +48,9 @@ WORKERS = 4
 
 PRETRAIN_LR = 0.001
 FINETUNE_LR = 0.01
-WEIGHT_DECAY = 0.0
+WEIGHT_DECAY = 0.01
 FACTOR = 0.7
-PATIENCE = 2
+PATIENCE = 3
 
 def clear_memory():
 
@@ -330,8 +330,7 @@ if __name__ == "__main__":
             # musi istnieć
             phase_save_path.parent.mkdir(parents=True, exist_ok=True)
 
-            speaker_id_map_to_save = (
-                split_manifest["maps"]["speaker_id_map_pretrain"] if DO_PRETRAIN
+            speaker_id_map_to_save = (split_manifest["maps"]["speaker_id_map_pretrain"] if DO_PRETRAIN
                 else custom_spakers_id_map)  # roozszerzenie o nowych mówców
 
             best_val_acc = val_accuracy
