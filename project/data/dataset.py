@@ -216,9 +216,11 @@ class SpeechCommandsKWS(Dataset):
                 start = torch.randint(0, length - self._target_sample_length + 1, (1,)).item()
 
             else: # to jest poprawka bo dataset brał cały czas ten sam fragment w kółko danego nagrania
+
                 if idx is not None:
                     max_start = length - self._target_sample_length
                     start = (idx * 997) % (max_start + 1)
+
                 else:
                     start = (length - self._target_sample_length) // 2
 
@@ -237,7 +239,7 @@ class SpeechCommandsKWS(Dataset):
             if not include_silence and label_type == "silence":
                 continue
 
-            if include_silence and label_type == "silence":
+            if include_silence and label_type == "silence": # zawsze false u nas
                 speakers.add("unk")
 
             else:
@@ -337,7 +339,7 @@ class CustomWAVSpeechCommandsKWS(Dataset):
 
             for wav_file in sorted(label_folder.glob("*.wav")):
 
-                speaker = self._extract_speaker_from_filename(wav_file.name)
+                speaker = self._extract_speaker_from_filename(wav_file.name).lower() # tutaj się źle mapowało!
                 all_audiofiles.append((wav_file, label, speaker))
 
         # Wybierz tylko próbki z podanych indeksów
@@ -384,8 +386,7 @@ class CustomWAVSpeechCommandsKWS(Dataset):
         log_mel = self.to_db(mel)
 
         # tu jest fallback, ale czy to teraz ważne? Obecnie nie ma zastosowania (w sumie kalka)
-        # na sztywno tutaj daje na razie -1, żeby wgl ignorował embedding, jeśli niewiadomo kto mówi
-        speaker_id = self.speaker_id_map.get(speaker, self.speaker_id_map.get("unk", -1))
+        speaker_id = self.speaker_id_map.get(speaker, self.speaker_id_map.get("unk", 0))
         # w każdym razie, jakby co to jest wartość 0 dla unkwknown, (wtedy ogólny wektor)
 
         return {"log_mel_spectrogram": log_mel,
