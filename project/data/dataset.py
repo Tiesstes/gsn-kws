@@ -1,14 +1,5 @@
-import random
-from pathlib import Path
-from typing import Optional, Dict
 from collections import Counter
 import matplotlib.pyplot as plt
-
-import torch
-import torchaudio
-from torch.utils.data import Dataset
-from torchaudio import transforms as T
-from torch.nn import functional as F
 
 import random
 from pathlib import Path
@@ -392,9 +383,10 @@ class CustomWAVSpeechCommandsKWS(Dataset):
         mel = self.to_melspec(waveform)
         log_mel = self.to_db(mel)
 
-        # tu jest fallback, ale czy to teraz ważne? W tym wypadku nie ma zastosowania (w sumie kalka)
-        speaker_id = self.speaker_id_map.get(speaker, self.speaker_id_map.get("unk", 0))
-        # w każdym razie, jakby co to jest wartość 0 dla unkwknown
+        # tu jest fallback, ale czy to teraz ważne? Obecnie nie ma zastosowania (w sumie kalka)
+        # na sztywno tutaj daje na razie -1, żeby wgl ignorował embedding, jeśli niewiadomo kto mówi
+        speaker_id = self.speaker_id_map.get(speaker, self.speaker_id_map.get("unk", -1))
+        # w każdym razie, jakby co to jest wartość 0 dla unkwknown, (wtedy ogólny wektor)
 
         return {"log_mel_spectrogram": log_mel,
                 "label": torch.tensor(self.label_map[label], dtype=torch.long),
