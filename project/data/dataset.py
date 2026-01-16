@@ -144,9 +144,8 @@ class SpeechCommandsKWS(Dataset):
         self.speaker_id_map = speaker_id_map
 
         # FEATURES
-        self.to_melspec = T.MelSpectrogram(
-            sample_rate=sample_rate,
-            n_fft=512,
+        self.to_melspec = T.MelSpectrogram(sample_rate=sample_rate,
+n_fft=512,
             win_length=480,
             hop_length=160,
             n_mels=number_of_mel_bands)
@@ -342,17 +341,16 @@ class CustomWAVSpeechCommandsKWS(Dataset):
                 speaker = self._extract_speaker_from_filename(wav_file.name).lower() # tutaj się źle mapowało!
                 all_audiofiles.append((wav_file, label, speaker))
 
-        # Wybierz tylko próbki z podanych indeksów
+        # wybierz tylko próbki z podanych indeksów
         self.samples = [all_audiofiles[i] for i in split_indices]
 
         # Mel-spektrogram (identycznie jak w SpeechCommandsKWS)
-        self.to_melspec = T.MelSpectrogram(
-            sample_rate=sample_rate,
-            n_fft=512,
-            win_length=480,
-            hop_length=160,
-            n_mels=number_of_mel_bands
-        )
+        self.to_melspec = T.MelSpectrogram(sample_rate=sample_rate,
+                                           n_fft=512,
+                                           win_length=480,
+                                           hop_length=160,
+                                           n_mels=number_of_mel_bands)
+
         self.to_db = T.AmplitudeToDB(stype="power")
 
         print(f"CustomWavDataset: {len(self.samples)} próbek, {len(set(s for _, _, s in self.samples))} mówców")
