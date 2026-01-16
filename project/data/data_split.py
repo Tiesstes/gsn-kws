@@ -15,7 +15,7 @@ from project.data.dataset import SpeechCommandsKWS, TARGET_LABELS
 
 # pomoc, żeby były stałe loadery i krótki kod
 def build_dataloaders(train_ds, val_ds, test_ds=None, batch_size: int = 128,
-                      num_workers: int = 0) -> Tuple[DataLoader, DataLoader, Optional[DataLoader]]:
+                      num_workers: int = 0, persistent_workers=True) -> Tuple[DataLoader, DataLoader, Optional[DataLoader]]:
 
     """
     Pomocnicza funkcaj, zęby zbudować sobie loader'y
@@ -35,23 +35,29 @@ def build_dataloaders(train_ds, val_ds, test_ds=None, batch_size: int = 128,
     """
     if (train_ds is not None) and (val_ds is not None) and (test_ds is None):
         # warunek na pretrain
-        train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-        val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+        train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers,
+                                  persistent_workers=persistent_workers,pin_memory=True)
+        val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers,
+                                persistent_workers=persistent_workers, pin_memory=True)
 
         test_loader = None
 
     elif (train_ds is not None) and (val_ds is not None) and (test_ds is not None):
         # warunek do finetune
-        train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-        val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers)
-        test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+        train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers,
+                                  persistent_workers=persistent_workers, pin_memory=True)
+        val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers,
+                                persistent_workers=persistent_workers, pin_memory=True)
+        test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers,
+                                 persistent_workers=persistent_workers, pin_memory=True)
 
 
     elif (test_ds is not None) and (train_ds is None) and (val_ds is None):
         # warunek na ewaluację
         train_loader = None
         val_loader = None
-        test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+        test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers,
+                                 persistent_workers=persistent_workers, pin_memory=True)
 
     else:
         raise ValueError(f"Nieprawidłowa kombinacja datasetów do stworzenia! Nie odpowiada żadnemu z etapów eksperymentu")
