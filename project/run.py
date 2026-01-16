@@ -7,6 +7,7 @@ import torch
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader
 from torchinfo import summary
+from torch.utils.tensorboard import SummaryWriter
 
 from project.data.dataset import extract_custom_speakers, split_custom_data, CustomWAVSpeechCommandsKWS
 from project.data.data_split import prepare_splits_manifest, load_splits_manifest, build_phase_datasets, build_dataloaders, extend_speaker_id_map
@@ -24,7 +25,7 @@ NOISE_PATH = Path(GSC_DATASET_PATH) / "SpeechCommands" / "speech_commands_v0.02"
 PRETRAIN_CHECKPOINT = BASE_PATH / "model" / f"pretrain_checkpoint_" # tu trzeba na koniec dodać numerek z epoką! to potem
 FINETUNE_CHECKPOINT = BASE_PATH / "model" / f"finetune_checkpoint_"
 
-IMPORT_EPOCH = 30 # to jest wspólna zmienna do odtwarzania checkpoint'ów!
+IMPORT_EPOCH = 31 # to jest wspólna zmienna do odtwarzania checkpoint'ów!
 PRETRAIN_IMPORT_CHECKPOINT = BASE_PATH / "model" / f"pretrain_checkpoint_{IMPORT_EPOCH}.pt" # tu trzeba na koniec dodać numerek z epoką! to potem
 FINETUNE_IMPORT_CHECKPOINT = BASE_PATH / "model" / f"finetune_checkpoint_{IMPORT_EPOCH}.pt"
 
@@ -41,19 +42,20 @@ DO_EVALUATE = False
 RESUME_TRAINING = True
 
 PRETRAIN_EPOCHS = 56
-FINETUNE_EPOCHS = 48
-BATCH_SIZE = 64
+FINETUNE_EPOCHS = 24
+BATCH_SIZE = 128
 WORKERS = 4
 
 PRETRAIN_LR = 0.001
-FINETUNE_LR = 0.001
-WEIGHT_DECAY = 0.01
-FACTOR = 0.6
-PATIENCE = 3
+FINETUNE_LR = 0.01
+WEIGHT_DECAY = 0.0
+FACTOR = 0.7
+PATIENCE = 2
 
 def clear_memory():
 
     if torch.cuda.is_available():
+
         torch.cuda.empty_cache()
     gc.collect()
 
@@ -284,8 +286,13 @@ if __name__ == "__main__":
     torch.cuda.synchronize()  # żeby poczekać, aż GPU dokończy obliczenia zanim zmierzymy czas
     start = time.perf_counter()
 
+    log_dir = BASE_PATH / "runs" / f"{phase_name}_{time.strftime('%Y%m%d-%H%M%S')}"
+    writer = SummaryWriter(log_dir=str(log_dir))
+    print(f"TensorBoard logs will be saved to {log_dir}")
+
     print(f"Przechodzę do {phase_name} - epoka {start_epoch} z {epochs_per_phase}")
     print("")
+
 
 
     for epoch in range(start_epoch, epochs_per_phase + 1):
@@ -301,6 +308,12 @@ if __name__ == "__main__":
 
         torch.cuda.synchronize()
         epoch_time = time.perf_counter() - epoch_start
+
+        writer.add_scalar(f"{phase_name}/Loss/Train", training_loss, epoch)
+        writer.add_scalar(f"{phase_name}/Loss/Val", val_loss, epoch)
+        writer.add_scalar(f"{phase_name}/Accuracy/Train", training_accuracy, epoch)
+        writer.add_scalar(f"{phase_name}/Accuracy/Val", val_accuracy, epoch)
+        writer.add_scalar(f"{phase_name}/LearningRate", current_lr, epoch)
 
         print("")
         print(f"Epoch of {phase_name} {epoch:02d}, "
@@ -336,9 +349,11 @@ if __name__ == "__main__":
     # torch.cuda.synchronize()
     total_time = time.perf_counter() - start
 
+
     print("")
     print(f"Trebiwanie trwało: {total_time:.1f}s")
     print(f"Najlepsza wartość val_accuracy: {best_val_acc:.4f}")
     print(f"Checkpoint zapisany w: {phase_save_path}{epoch}")
     print("")
 
+    writer.close()
