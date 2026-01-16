@@ -201,7 +201,7 @@ class SpeechCommandsKWS(Dataset):
             speaker_id = self.speaker_id_map.get(speaker, -1)  # -1 oznacza brak embedding'u, jeśli coś nie tak
 
 
-        waveform = self._crop_or_pad(waveform)
+        waveform = self._crop_or_pad(waveform, idx)
         mel = self.to_melspec(waveform)
         log_mel = self.to_db(mel)
 
@@ -212,7 +212,7 @@ class SpeechCommandsKWS(Dataset):
         }
 
     # UTILS
-    def _crop_or_pad(self, waveform: torch.Tensor) -> torch.Tensor:
+    def _crop_or_pad(self, waveform: torch.Tensor, idx: int = None) -> torch.Tensor:
 
         length = waveform.shape[1]
 
@@ -223,10 +223,17 @@ class SpeechCommandsKWS(Dataset):
 
             if not self.deterministic:
                 start = torch.randint(0, length - self._target_sample_length + 1, (1,)).item()
-            else:
-                start = (length - self._target_sample_length) // 2
 
-            return waveform[:, start:start + self._target_sample_length]
+            else: # to jest poprawka bo dataset brał cały czas ten sam fragment w kółko danego nagrania
+                if idx is not None:
+                    max_start = length - self._target_sample_length
+                    start = (idx * 997) % (max_start + 1)
+                else:
+                    start = (length - self._target_sample_length) // 2
+
+            waveform = waveform[:, start:start + self._target_sample_length]
+
+            return waveform
 
         return waveform
 
