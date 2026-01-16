@@ -5,9 +5,10 @@ import gc
 import torch
 
 from torch.nn import CrossEntropyLoss
+from torch.utils.data import DataLoader
 from torchinfo import summary
 
-from project.data.dataset import extract_custom_speakers, collect_all_custom_wavs, split_custom_data, CustomWAVSpeechCommandsKWS
+from project.data.dataset import extract_custom_speakers, split_custom_data, CustomWAVSpeechCommandsKWS
 from project.data.data_split import prepare_splits_manifest, load_splits_manifest, build_phase_datasets, build_dataloaders, extend_speaker_id_map
 
 from project.model.kws_net import KWSNet
@@ -23,7 +24,7 @@ NOISE_PATH = Path(GSC_DATASET_PATH) / "SpeechCommands" / "speech_commands_v0.02"
 PRETRAIN_CHECKPOINT = BASE_PATH / "model" / f"pretrain_checkpoint_" # tu trzeba na koniec dodać numerek z epoką! to potem
 FINETUNE_CHECKPOINT = BASE_PATH / "model" / f"finetune_checkpoint_"
 
-IMPORT_EPOCH = 33 # to jest wspólna zmienna do odtwarzania checkpoint'ów!
+IMPORT_EPOCH = 30 # to jest wspólna zmienna do odtwarzania checkpoint'ów!
 PRETRAIN_IMPORT_CHECKPOINT = BASE_PATH / "model" / f"pretrain_checkpoint_{IMPORT_EPOCH}.pt" # tu trzeba na koniec dodać numerek z epoką! to potem
 FINETUNE_IMPORT_CHECKPOINT = BASE_PATH / "model" / f"finetune_checkpoint_{IMPORT_EPOCH}.pt"
 
@@ -37,18 +38,18 @@ DO_PRETRAIN = False
 DO_FINETUNE = True
 DO_EVALUATE = False
 
-RESUME_TRAINING = False
+RESUME_TRAINING = True
 
-PRETRAIN_EPOCHS = 48
+PRETRAIN_EPOCHS = 56
 FINETUNE_EPOCHS = 48
 BATCH_SIZE = 64
-WORKERS = 0
+WORKERS = 4
 
 PRETRAIN_LR = 0.001
-FINETUNE_LR = 0.0001
-WEIGHT_DECAY = 0.0
-SCHEDULER_STEP_SIZE = 4
-SCHEDULER_GAMMA = 0.5
+FINETUNE_LR = 0.001
+WEIGHT_DECAY = 0.01
+FACTOR = 0.6
+PATIENCE = 3
 
 def clear_memory():
 
@@ -149,7 +150,7 @@ if __name__ == "__main__":
         # jak go nie ma to robimy (na później)
         prepare_splits_manifest(data_manifest_path=DATASPLIT_MANIFEST_PATH, gsc_dataset_path=GSC_DATASET_PATH, noise_dir=NOISE_PATH,
                                 seed=1234, finetune_min_samples_per_class=6, pretrain_val_ratio=0.1, duration=1.0, sample_rate=16000,
-                                number_of_mel_bands=40, silence_per_target=1.0, unknown_to_target_ratio=1.0)
+                                number_of_mel_bands=40, silence_per_target=1.5, unknown_to_target_ratio=3.0) # bo wewnętrzne zróżnicowanie jest gigantyczne (25 podklas)
 
     # jak jest to wczytanie od razu (albo po utworzeniu)
     split_manifest = load_splits_manifest(DATASPLIT_MANIFEST_PATH)
@@ -163,7 +164,7 @@ if __name__ == "__main__":
     model.to(DEVICE)
 
     optimiser = torch.optim.Adam(model.parameters(), lr=PRETRAIN_LR)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimiser, step_size=SCHEDULER_STEP_SIZE, gamma=SCHEDULER_GAMMA)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimiser, mode="min", factor=FACTOR, patience=PATIENCE)
 
     if DO_PRETRAIN:
 
@@ -171,8 +172,8 @@ if __name__ == "__main__":
         phase_save_path = PRETRAIN_CHECKPOINT
         epochs_per_phase = PRETRAIN_EPOCHS
 
-        training_dataset, val_dataset, _ = build_phase_datasets(split_manifest, "pretrain", False)
-        active_training_loader, active_val_loader, _ = build_dataloaders(training_dataset, val_dataset, batch_size=BATCH_SIZE)
+        training_dataset, val_dataset, _ = build_phase_datasets(split_manifest, "pretrain")
+        active_training_loader, active_val_loader, _ = build_dataloaders(training_dataset, val_dataset, batch_size=BATCH_SIZE, num_workers=WORKERS)
 
 
         if RESUME_TRAINING and PRETRAIN_IMPORT_CHECKPOINT.exists():
@@ -223,10 +224,9 @@ if __name__ == "__main__":
                                                   deterministic=True, seed=1234)
 
 
-        # Bezpośrednie użycie DataLoader zamiast build_dataloaders
-        from torch.utils.data import DataLoader
-        active_training_loader = DataLoader(training_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=WORKERS)
-        active_val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=WORKERS)
+        # bezpośrednie użycie DataLoader zamiast build_dataloaders
+        active_training_loader = DataLoader(training_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=WORKERS, persistent_workers=True)
+        active_val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=WORKERS, persistent_workers=True)
 
         # zwiększmy embedding
         num_speakers_ft = len(custom_spakers_id_map)
@@ -241,7 +241,7 @@ if __name__ == "__main__":
         # a ta λ = weight_decay
         optimiser = torch.optim.Adam(model.get_trainable_parameters(), lr=FINETUNE_LR, weight_decay=WEIGHT_DECAY)
 
-        scheduler = torch.optim.lr_scheduler.StepLR(optimiser, step_size=SCHEDULER_STEP_SIZE, gamma=SCHEDULER_GAMMA)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimiser, mode="min", factor=FACTOR, patience=PATIENCE)
 
 
         # łądowanie wag jeżeli możemy
@@ -267,9 +267,6 @@ if __name__ == "__main__":
 
 
         print("kształt Embedding'u:", model.speaker_embedding.weight.shape)
-
-        training_dataset, val_dataset, test_dataset = build_phase_datasets(split_manifest, "finetune")
-        active_training_loader, active_val_loader, _ = build_dataloaders(training_dataset, val_dataset, test_dataset, batch_size=BATCH_SIZE)
 
 
     criterion = CrossEntropyLoss()
@@ -298,7 +295,9 @@ if __name__ == "__main__":
         training_loss, training_accuracy = run_epoch(model, active_training_loader, DEVICE, criterion, optimiser)
         val_loss, val_accuracy = run_epoch(model, active_val_loader, DEVICE, criterion, None)
 
-        scheduler.step() # po epoce (zmieni lr, jeśli epoka przeszła step size
+        scheduler.step(val_loss) # po epoce (zmieni lr, jeśli epoka przeszła step size
+        current_lr = optimiser.param_groups[0]['lr']
+        print(f"Epoch {epoch}, LR = {current_lr:.6f}")
 
         torch.cuda.synchronize()
         epoch_time = time.perf_counter() - epoch_start
@@ -320,14 +319,13 @@ if __name__ == "__main__":
 
             speaker_id_map_to_save = (
                 split_manifest["maps"]["speaker_id_map_pretrain"] if DO_PRETRAIN
-                else custom_spakers_id_map  # [MODIF] Rozszerzony o nowych mówców
-            )
+                else custom_spakers_id_map)  # roozszerzenie o nowych mówców
 
             best_val_acc = val_accuracy
             torch.save({"epoch": epoch, "model_state": model.state_dict(),
                             "optimiser_state": optimiser.state_dict(), "scheduler_state": scheduler.state_dict(),
                             "val_accuracy": val_accuracy,
-                            "speaker_id_map": split_manifest["maps"]["speaker_id_map_pretrain" if DO_PRETRAIN else "speaker_id_map_finetune"],
+                            "speaker_id_map": split_manifest["maps"]["speaker_id_map_pretrain"] if DO_PRETRAIN else custom_spakers_id_map,
                             "label_map": split_manifest["maps"]["label_map"]},
                            f"{phase_save_path}{epoch}.pt")
 
