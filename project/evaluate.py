@@ -22,8 +22,8 @@ CUSTOM_DATA_ROOT = GSC_PATH / "SpeechCommands" / "custom_speech_commands_v0.02"
 NOISE_PATH = GSC_PATH / "SpeechCommands" / "speech_commands_v0.02" / "_background_noise_"
 DATASPLIT_MANIFEST_PATH = BASE_PATH / "data" / "splits" / "experiment_v1.pt"
 
-IMPORT_EPOCH_FINETUNE = 36
-IMPORT_EPOCH_PRETRAIN = 30
+IMPORT_EPOCH_FINETUNE = 15
+IMPORT_EPOCH_PRETRAIN = 31
 
 PRETRAIN_IMPORT_CHECKPOINT = Path(BASE_PATH) / "model" / f"pretrain_checkpoint_{IMPORT_EPOCH_PRETRAIN}.pt"
 FINETUNE_IMPORT_CHECKPOINT = Path(BASE_PATH) / "model" / f"finetune_checkpoint_{IMPORT_EPOCH_FINETUNE}.pt"
@@ -39,10 +39,10 @@ print("Torch version:", torch.__version__)
 print()
 
 
-def evaluate(model, data_loader, device):
+# teraz można jeszcze ustawić czy chcemy ognorować embedding (pretrain ma unk)
+def evaluate(model, data_loader, device, no_embedding=False):
     """
     Ewaluuj model na zbiorze testowym, zwracaj predykcje i etykiety
-    Tutaj jest ewaluacja pretrain ignoruje speaker embedding zupełnie
     """
 
     model.eval()
@@ -55,13 +55,18 @@ def evaluate(model, data_loader, device):
 
             x = batch["log_mel_spectrogram"].to(device)
             y = batch["label"].to(device)
-
             speaker = batch["speaker_id"].to(device)
+
+            # dla no embedding jest id -1, czyli maska się robi 0 w kws
+            if no_embedding:
+                speaker = torch.full_like(speaker, -1) # wszędzie są -1
+
             logits = model(x, speaker)
             predictions = logits.argmax(dim=1)
 
             all_predictions.extend(predictions.cpu().numpy())
             all_labels.extend(y.cpu().numpy())
+
 
             total_correct += int((predictions == y).sum())
             total_n += x.shape[0]
@@ -71,22 +76,27 @@ def evaluate(model, data_loader, device):
 
 def compute_metrics(all_predictions, all_labels, model_class_names):
     """Oblicza precision, recall i daje nam confusion matrix."""
-    precision = precision_score(all_labels, all_predictions, average=None, zero_division=0)
-    recall = recall_score(all_labels, all_predictions, average=None, zero_division=0)
 
-    print(f"Precision (macro): {precision_score(all_labels, all_predictions, labels=list(range(len(model_class_names) - 1)),average='macro', zero_division=0):.4f}")
-    print(f"Recall (macro):    {recall_score(all_labels, all_predictions, labels=list(range(len(model_class_names) - 1)) ,average='macro', zero_division=0):.4f}\n")
+    # tu pełna lista etykiet (0-11), bo był indexerror
+    full_labels = list(range(len(model_class_names)))
+
+    # labels żeby zawsze był rozmiar 12
+    precision = precision_score(all_labels, all_predictions, labels=full_labels, average=None, zero_division=0)
+    recall = recall_score(all_labels, all_predictions, labels=full_labels, average=None, zero_division=0)
+
+    # full_labels dla macro score
+    print(f"Precision (macro): {precision_score(all_labels, all_predictions, labels=full_labels, average='macro', zero_division=0):.4f}")
+    print(f"Recall (macro): {recall_score(all_labels, all_predictions, labels=full_labels, average='macro', zero_division=0):.4f}\n")
 
     for i, class_name in enumerate(model_class_names):
-        if class_name == "silence":
-            continue
+        # teraz i 0-11 zawsze pasuje do rozmiaru tablicy 12
         print(f"{class_name:15s} | Precision: {precision[i]:.4f} | Recall: {recall[i]:.4f}")
 
-    return confusion_matrix(all_labels, all_predictions, labels=list(range(len(model_class_names) - 1))), precision, recall
+    # confusion matrix również musi mieć wymiar 12x12
+    return confusion_matrix(all_labels, all_predictions, labels=full_labels), precision, recall
 
 
 def plot_confusion_matrix(cm, model_class_names, name, save_path=None):
-
     plt.figure(figsize=(12, 10))
     sns.heatmap(cm, annot=True, fmt='d', cmap='magma', xticklabels=model_class_names, yticklabels=model_class_names)
     plt.ylabel('Prawdziwa etykieta')
@@ -130,9 +140,8 @@ if __name__ == "__main__":
     # koeniczene żeby dało się porównywać
     class_names = sorted(old_label_map.keys(), key=old_label_map.get)
 
-    print(f"Liczba klas: {len(class_names)}")
+    print(f"Liczba klas to {len(class_names)}")
     print("")
-
 
     # finetune checkpoint (jeśli istnieje)
     if FINETUNE_IMPORT_CHECKPOINT.exists():
@@ -153,9 +162,12 @@ if __name__ == "__main__":
     # dataset testowy
     print("Tworzę test dataset...")
     _, _, test_indices = split_custom_data(CUSTOM_DATA_ROOT, seed=1234)
+
     # pełna mapa finetune
-    test_dataset = CustomWAVSpeechCommandsKWS(root_data_dir=CUSTOM_DATA_ROOT,split_indices=test_indices,
-                                              speaker_id_map=new_speaker_id_map, label_map=split_manifest["maps"]["label_map"],
+    # jeden raz z pełną mapą, aby nie psuć stanu dla fazy finetune
+    test_dataset = CustomWAVSpeechCommandsKWS(root_data_dir=CUSTOM_DATA_ROOT, split_indices=test_indices,
+                                              speaker_id_map=new_speaker_id_map,
+                                              label_map=split_manifest["maps"]["label_map"],
                                               deterministic=True)
 
     test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=WORKERS)
@@ -174,10 +186,8 @@ if __name__ == "__main__":
     model_pretrain = KWSNet(num_of_classes=num_classes, num_of_speakers=num_speakers_pretrain).to(DEVICE)
     model_pretrain.load_state_dict(pretrain_checkpoint["model_state"], strict=False)
 
-    # oszukanie datasetu, bo został zainicjalizowany na finetune
-    test_loader.dataset.speaker_id_map = old_speaker_id_map
-    # maska w KWSNet, model z pretrain zignoruje nowych mówców z testu (nie znalazł go mapie)
-    predictions_pretrain, labels, accuracy_pretrain = evaluate(model_pretrain, test_loader, DEVICE)
+    # już nie ma test_loader.dataset.speaker_id_map = old_speaker_id_map bo dane się psuły dla finetuningu
+    predictions_pretrain, labels, accuracy_pretrain = evaluate(model_pretrain, test_loader, DEVICE, no_embedding=True)
 
     print(f"Accuracy: {accuracy_pretrain:.4f}")
     print("")
@@ -191,19 +201,19 @@ if __name__ == "__main__":
 
     # FINETUNE jak jest
     if has_finetune:
-
         print("~~" * 100)
         print("FINETUNE")
         print("~~" * 100)
 
         num_speakers_finetune = len(new_speaker_id_map)
 
-        # MODYFIKACJA: Zwiększamy embedding (ensure_num_of_speakers) przed ładowaniem wag FT
+        # przed ławowaniem wag zwiększamy embedding
         model_finetune = KWSNet(num_of_classes=num_classes, num_of_speakers=num_speakers_pretrain).to(DEVICE)
         model_finetune.ensure_num_of_speakers(num_speakers_finetune)
         model_finetune.load_state_dict(finetune_checkpoint["model_state"])
 
-        predictions_finetune, _, accuracy_finetune = evaluate(model_finetune, test_loader, DEVICE)
+        # czy będzie używał embeddingów? TAK
+        predictions_finetune, _, accuracy_finetune = evaluate(model_finetune, test_loader, DEVICE, no_embedding=False)
 
         print(f"Accuracy: {accuracy_finetune:.4f}")
         print()
