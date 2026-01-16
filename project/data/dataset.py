@@ -409,6 +409,58 @@ class CustomWAVSpeechCommandsKWS(Dataset):
 
         return waveform
 
+    def visualise_custom_logmel(self, n_cols: int = 4, figsize=(14, 10)):
+        """
+        Wizualizuje przykład log-Mel spektrogramu dla każdej klasy dostępnej w custom dataset
+        """
+        # mapowanie odwrotne: id -> nazwa klasy
+        id_to_name = {value: key for key, value in self.label_map.items()}
+
+        # zbieramy po jednym przykładzie dla każdej klasy występującej w self.samples
+        example_per_class = {}  # label_name -> np_logmel_2d
+
+        for i in range(len(self)):
+
+            sample = self[i]  #  __getitem__, który robi transformację log-Mel
+
+            label_id = int(sample["label"].item())
+            label_name = id_to_name[label_id]
+
+            if label_name not in example_per_class:
+
+                logmel_spectrogram = sample["log_mel_spectrogram"]  # Tensor [1, n_mels, T]
+                numpy_logmel = logmel_spectrogram.squeeze(0).detach().cpu().numpy()
+                example_per_class[label_name] = (i, numpy_logmel)
+
+            # jeśli mamy już wszystkie klasy zdefiniowane w label_map to stop
+            if len(example_per_class) == len(self.label_map):
+                break
+
+        # siatka
+        classes_to_show = sorted(example_per_class.keys())
+        n = len(classes_to_show)
+        n_rows = (n + n_cols - 1) // n_cols
+
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize)
+        axes = axes.flatten()
+
+        for ax_i, label_name in enumerate(classes_to_show):
+            ax = axes[ax_i]
+            idx, spec = example_per_class[label_name]
+
+            # imshow wyświetla spektrogram
+            im = ax.imshow(spec, origin="lower", aspect="auto", cmap='viridis')
+            ax.set_title(f"Klasa: {label_name}\n(Sample idx: {idx})")
+            ax.set_xlabel("Czas (ramki)")
+            ax.set_ylabel("Pasma Mel")
+
+        # ukryj puste osie, jeśli liczba klas nie wypełnia całej siatki
+        for j in range(n, len(axes)):
+            axes[j].axis("off")
+
+        plt.tight_layout()
+        plt.show()
+
 
 def collect_all_custom_wavs(root_dir: Path) -> List[Tuple[Path, str, str]]:
     """
@@ -428,6 +480,9 @@ def collect_all_custom_wavs(root_dir: Path) -> List[Tuple[Path, str, str]]:
             wavs.append((wav_file, label, speaker))
 
     return wavs
+
+
+
 
 
 def split_custom_data( root_dir: Path, train_ratio: float = 0.7, val_ratio: float = 0.15,
@@ -483,4 +538,5 @@ def extract_custom_speakers(root_dir: Path) -> set:
             speakers.add(speaker)
 
     return speakers
+
 
