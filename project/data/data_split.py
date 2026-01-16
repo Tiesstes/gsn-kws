@@ -146,7 +146,7 @@ class SplitBuilder:
     def build_speaker_id_map_from_speakers(speakers: set[str]):
 
         speakers = set(speakers)
-        speakers.update({"unk"})
+        speakers.update({"unk": 0})
 
         speaker_map_from_speakers = {speaker: i for i, speaker in enumerate(sorted(speakers))}
 
